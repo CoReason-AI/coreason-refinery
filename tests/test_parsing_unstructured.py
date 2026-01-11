@@ -103,3 +103,74 @@ def test_parse_exception_propagation(parser: UnstructuredPdfParser) -> None:
     with patch("coreason_refinery.parsing.partition_pdf", side_effect=IOError("File error")):
         with pytest.raises(IOError, match="File error"):
             parser.parse("bad_file.pdf")
+
+
+def test_metadata_preservation(parser: UnstructuredPdfParser) -> None:
+    """Test that arbitrary metadata fields are preserved in the output."""
+    metadata = ElementMetadata(
+        page_number=5,
+        filename="test.pdf",
+        file_directory="/tmp",
+        languages=["eng"],
+    )
+    # unstructured might add other fields, we check if they survive to_dict
+    element = NarrativeText(text="Metadata Test", metadata=metadata)
+
+    with patch("coreason_refinery.parsing.partition_pdf", return_value=[element]):
+        results = parser.parse("test.pdf")
+
+        meta_out = results[0].metadata
+        assert meta_out["page_number"] == 5
+        assert meta_out["filename"] == "test.pdf"
+        assert meta_out["file_directory"] == "/tmp"
+        assert meta_out["languages"] == ["eng"]
+
+
+def test_element_ordering(parser: UnstructuredPdfParser) -> None:
+    """Test that the order of elements is strictly preserved."""
+    elements = [
+        Title(text="First", metadata=ElementMetadata(page_number=1)),
+        NarrativeText(text="Second", metadata=ElementMetadata(page_number=1)),
+        Table(text="Third", metadata=ElementMetadata(page_number=2)),
+        Footer(text="Fourth", metadata=ElementMetadata(page_number=2)),
+    ]
+
+    with patch("coreason_refinery.parsing.partition_pdf", return_value=elements):
+        results = parser.parse("doc.pdf")
+
+        assert len(results) == 4
+        assert results[0].text == "First"
+        assert results[1].text == "Second"
+        assert results[2].text == "Third"
+        assert results[3].text == "Fourth"
+
+
+def test_complex_table_structure(parser: UnstructuredPdfParser) -> None:
+    """Test a complex table with markdown representation."""
+    table_text = "| Header 1 | Header 2 |\n| --- | --- |\n| Cell 1 | Cell 2 |"
+    element = Table(text=table_text, metadata=ElementMetadata(page_number=10, text_as_html="<table>...</table>"))
+
+    with patch("coreason_refinery.parsing.partition_pdf", return_value=[element]):
+        results = parser.parse("doc.pdf")
+
+        assert results[0].type == "TABLE"
+        assert results[0].text == table_text
+        # Verify that even 'text_as_html' if present in metadata is preserved
+        assert results[0].metadata["text_as_html"] == "<table>...</table>"
+
+
+def test_whitespace_and_empty_elements(parser: UnstructuredPdfParser) -> None:
+    """Test handling of empty or whitespace-only elements."""
+    elements = [
+        NarrativeText(text="", metadata=ElementMetadata(page_number=1)),
+        NarrativeText(text="   ", metadata=ElementMetadata(page_number=1)),
+        NarrativeText(text="\n", metadata=ElementMetadata(page_number=1)),
+    ]
+
+    with patch("coreason_refinery.parsing.partition_pdf", return_value=elements):
+        results = parser.parse("doc.pdf")
+
+        assert len(results) == 3
+        assert results[0].text == ""
+        assert results[1].text == "   "
+        assert results[2].text == "\n"
