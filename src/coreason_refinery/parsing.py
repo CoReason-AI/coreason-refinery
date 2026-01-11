@@ -12,6 +12,15 @@ from abc import ABC, abstractmethod
 from typing import Any, List, Literal
 
 from pydantic import BaseModel, Field
+from unstructured.documents.elements import (
+    Element,
+    Footer,
+    Header,
+    ListItem,
+    Table,
+    Title,
+)
+from unstructured.partition.pdf import partition_pdf
 
 
 class ParsedElement(BaseModel):
@@ -68,3 +77,41 @@ class MockParser(DocumentParser):
                 metadata={"page_number": 2, "is_table": True},
             ),
         ]
+
+
+class UnstructuredPdfParser(DocumentParser):
+    """PDF parser using the unstructured library."""
+
+    def parse(self, file_path: str) -> List[ParsedElement]:
+        """Parse a PDF file using unstructured."""
+        elements = partition_pdf(filename=file_path)
+        return [self._map_element(e) for e in elements]
+
+    def _map_element(self, element: Element) -> ParsedElement:
+        """Map unstructured element to ParsedElement."""
+        element_type = "UNCATEGORIZED"
+        if isinstance(element, Title):
+            element_type = "TITLE"
+        elif isinstance(element, Table):
+            element_type = "TABLE"
+        elif isinstance(element, ListItem):
+            element_type = "LIST_ITEM"
+        elif isinstance(element, Header):
+            element_type = "HEADER"
+        elif isinstance(element, Footer):
+            element_type = "FOOTER"
+        elif type(element).__name__ == "NarrativeText" or type(element).__name__ == "Text":
+            element_type = "NARRATIVE_TEXT"
+
+        # Extract metadata
+        metadata = element.metadata.to_dict() if element.metadata else {}
+
+        # Flatten helpful metadata fields to top level of our metadata dict
+        if "page_number" in metadata:
+            metadata["page_number"] = metadata["page_number"]
+
+        return ParsedElement(
+            text=str(element),
+            type=element_type,  # type: ignore[arg-type]
+            metadata=metadata,
+        )

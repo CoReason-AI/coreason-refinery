@@ -11,9 +11,8 @@
 from typing import List
 
 import pytest
-from pydantic import ValidationError
-
 from coreason_refinery.parsing import DocumentParser, MockParser, ParsedElement
+from pydantic import ValidationError
 
 
 def test_parsed_element_creation() -> None:
