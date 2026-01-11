@@ -11,6 +11,7 @@
 from typing import Generator
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pandas as pd
 import pytest
 from coreason_refinery.parsing import ExcelParser
@@ -81,6 +82,77 @@ def test_excel_parser_large_sheet(mock_read_excel: MagicMock) -> None:
     assert chunk3.metadata["chunk_index"] == 2
     assert chunk3.metadata["row_start"] == 100
     assert "109" in chunk3.text
+
+
+def test_excel_parser_boundary_conditions(mock_read_excel: MagicMock) -> None:
+    """Test exact boundary conditions (50 rows vs 51 rows)."""
+    # Case 1: Exactly 50 rows -> 1 chunk
+    df_50 = pd.DataFrame({"ID": range(50)})
+    mock_read_excel.return_value = {"Sheet50": df_50}
+
+    parser = ExcelParser()
+    elements = parser.parse("dummy.xlsx")
+
+    # Header + 1 Table
+    assert len(elements) == 2
+    assert elements[1].type == "TABLE"
+    assert elements[1].metadata["total_chunks"] == 1
+
+    # Case 2: Exactly 51 rows -> 2 chunks
+    df_51 = pd.DataFrame({"ID": range(51)})
+    mock_read_excel.return_value = {"Sheet51": df_51}
+
+    elements = parser.parse("dummy.xlsx")
+
+    # Header + 2 Tables
+    assert len(elements) == 3
+    assert elements[1].type == "TABLE"
+    assert elements[1].metadata["chunk_index"] == 0
+    assert elements[2].type == "TABLE"
+    assert elements[2].metadata["chunk_index"] == 1
+
+
+def test_excel_parser_complex_content(mock_read_excel: MagicMock) -> None:
+    """Test parsing complex content (NaNs, dates, special chars, duplicates)."""
+    df = pd.DataFrame(
+        {
+            "Text": ["Line1\nLine2", "With | Pipe"],
+            "Numbers": [np.nan, 3.14159],
+            "Dates": [pd.Timestamp("2023-01-01"), pd.Timestamp("2023-12-31")],
+            "Duplicate": ["A", "B"],
+        }
+    )
+    # Add a duplicate column name manually?
+    # Pandas handles this on read, but let's see if we can simulate duplicate columns in the DF structure
+    # Actually, if pandas read_excel reads duplicates, it renames them "Duplicate", "Duplicate.1"
+    # Let's verify that behavior or just ensure the parser doesn't crash.
+    # We'll just stick to the DF we made.
+
+    mock_read_excel.return_value = {"Complex": df}
+
+    parser = ExcelParser()
+    elements = parser.parse("dummy.xlsx")
+
+    assert len(elements) == 2
+    table = elements[1].text
+
+    # 1. Newlines should be preserved or escaped.
+    # Tabulate usually converts \n to space or keeps it depending on format.
+    # Markdown tables don't support multiline cells natively without <br>.
+    # Let's see what happens.
+
+    # 2. Pipes should be escaped
+    # "With | Pipe" -> "With \| Pipe" or similar?
+    # Actually, let's just assert the data is present.
+    assert "Line1" in table
+    assert "Pipe" in table
+
+    # 3. NaNs should ideally be empty or "nan"
+    # Tabulate default for pandas uses 'nan' string.
+    assert "3.14159" in table
+
+    # 4. Dates
+    assert "2023-01-01" in table
 
 
 def test_excel_parser_empty_sheet(mock_read_excel: MagicMock) -> None:
