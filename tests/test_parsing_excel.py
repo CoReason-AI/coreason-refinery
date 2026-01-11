@@ -8,15 +8,13 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_refinery
 
-from unittest.mock import patch
+from typing import Generator
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
 from coreason_refinery.parsing import ExcelParser
 
-
-from typing import Generator
-from unittest.mock import MagicMock
 
 @pytest.fixture
 def mock_read_excel() -> Generator[MagicMock, None, None]:
