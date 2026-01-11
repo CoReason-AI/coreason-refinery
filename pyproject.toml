@@ -11,6 +11,11 @@ packages = [{include = "coreason_refinery", from = "src"}]
 python = ">=3.12, <3.15"
 loguru = "^0.7.2"
 pydantic = "^2.12.5"
+unstructured = "^0.18.27"
+pdfminer-six = "^20260107"
+pi-heif = "^1.1.1"
+unstructured-inference = "^1.1.4"
+pdf2image = "^1.17.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.2"
