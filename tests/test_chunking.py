@@ -157,3 +157,85 @@ def test_content_no_header(chunker: SemanticChunker) -> None:
     assert chunks[0].text == "Just some text\n\nMore text"
     assert chunks[0].metadata["header_hierarchy"] == []
     assert "Context:" not in chunks[0].text
+
+
+def test_complex_depth_jumps(chunker: SemanticChunker) -> None:
+    """Test non-linear depth changes (skipping levels)."""
+    elements = [
+        ParsedElement(text="Root", type="TITLE", metadata={}),
+        ParsedElement(text="H1", type="HEADER", metadata={"section_depth": 1}),
+        ParsedElement(text="H3", type="HEADER", metadata={"section_depth": 3}),  # Skips depth 2
+        ParsedElement(text="Content A", type="NARRATIVE_TEXT", metadata={}),
+        ParsedElement(text="H2", type="HEADER", metadata={"section_depth": 2}),  # Back up to 2
+        ParsedElement(text="Content B", type="NARRATIVE_TEXT", metadata={}),
+    ]
+
+    chunks = chunker.chunk(elements)
+
+    assert len(chunks) == 2
+
+    # Chunk 1: Root > H1 > H3
+    assert chunks[0].metadata["header_hierarchy"] == ["Root", "H1", "H3"]
+    assert "Content A" in chunks[0].text
+
+    # Chunk 2: Root > H1 > H2 (H3 should be popped, H1 retained as 1 < 2)
+    assert chunks[1].metadata["header_hierarchy"] == ["Root", "H1", "H2"]
+    assert "Content B" in chunks[1].text
+
+
+def test_mixed_content_types(chunker: SemanticChunker) -> None:
+    """Test mixing text, lists, and tables in one section."""
+    elements = [
+        ParsedElement(text="Section Mixed", type="HEADER", metadata={"section_depth": 1}),
+        ParsedElement(text="Intro text.", type="NARRATIVE_TEXT", metadata={}),
+        ParsedElement(text="* Item 1", type="LIST_ITEM", metadata={}),
+        ParsedElement(text="* Item 2", type="LIST_ITEM", metadata={}),
+        ParsedElement(text="| Col1 | Col2 |", type="TABLE", metadata={}),
+        ParsedElement(text="Outro text.", type="NARRATIVE_TEXT", metadata={}),
+    ]
+
+    chunks = chunker.chunk(elements)
+
+    assert len(chunks) == 1
+    text = chunks[0].text
+    assert "Context: Section Mixed" in text
+    assert "Intro text." in text
+    assert "* Item 1" in text
+    assert "* Item 2" in text
+    assert "| Col1 | Col2 |" in text
+    assert "Outro text." in text
+    # Verify order roughly
+    assert text.index("Intro text.") < text.index("| Col1 | Col2 |")
+
+
+def test_header_empty_text(chunker: SemanticChunker) -> None:
+    """Test a header with empty text string."""
+    elements = [
+        ParsedElement(text="Root", type="TITLE", metadata={}),
+        ParsedElement(text="", type="HEADER", metadata={"section_depth": 1}),
+        ParsedElement(text="Content", type="NARRATIVE_TEXT", metadata={}),
+    ]
+
+    chunks = chunker.chunk(elements)
+
+    assert len(chunks) == 1
+    # Should be ["Root", ""]
+    assert chunks[0].metadata["header_hierarchy"] == ["Root", ""]
+    # Context string should probably look like "Context: Root > " or similar.
+    assert "Context: Root > " in chunks[0].text
+
+
+def test_title_in_middle(chunker: SemanticChunker) -> None:
+    """Test a TITLE appearing in the middle of content."""
+    elements = [
+        ParsedElement(text="Doc 1", type="TITLE", metadata={}),
+        ParsedElement(text="Content 1", type="NARRATIVE_TEXT", metadata={}),
+        ParsedElement(text="Doc 2", type="TITLE", metadata={}),
+        ParsedElement(text="Content 2", type="NARRATIVE_TEXT", metadata={}),
+    ]
+
+    chunks = chunker.chunk(elements)
+
+    assert len(chunks) == 2
+    assert chunks[0].metadata["header_hierarchy"] == ["Doc 1"]
+    assert chunks[1].metadata["header_hierarchy"] == ["Doc 2"]
