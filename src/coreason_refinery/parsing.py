@@ -8,9 +8,11 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_refinery
 
+import math
 from abc import ABC, abstractmethod
 from typing import Any, List, Literal
 
+import pandas as pd
 from pydantic import BaseModel, Field
 from unstructured.documents.elements import (
     Element,
@@ -115,3 +117,82 @@ class UnstructuredPdfParser(DocumentParser):
             type=element_type,  # type: ignore[arg-type]
             metadata=metadata,
         )
+
+
+class ExcelParser(DocumentParser):
+    """Parses Excel files into Markdown tables using pandas."""
+
+    ROW_LIMIT = 50
+
+    def parse(self, file_path: str) -> List[ParsedElement]:
+        """Parse an Excel file.
+
+        Strategy:
+            - Load file.
+            - Iterate sheets.
+            - If sheet rows > ROW_LIMIT, split into chunks.
+            - Convert chunks to Markdown tables.
+            - Sheet names become Headers.
+        """
+        # Read all sheets
+        try:
+            # None reads all sheets as a dict of {sheet_name: df}
+            sheets = pd.read_excel(file_path, sheet_name=None)
+        except Exception as e:
+            # Handle empty or invalid files gracefully, or re-raise
+            # For now, let's assume valid file or allow bubbling up
+            raise RuntimeError(f"Failed to parse Excel file: {e}") from e
+
+        elements: List[ParsedElement] = []
+
+        for sheet_name, df in sheets.items():
+            # Add Sheet Name as a Header
+            elements.append(
+                ParsedElement(
+                    text=f"Sheet: {sheet_name}",
+                    type="HEADER",
+                    metadata={"sheet_name": sheet_name, "section_depth": 2},
+                )
+            )
+
+            if df.empty:
+                elements.append(
+                    ParsedElement(
+                        text="(Empty Sheet)",
+                        type="NARRATIVE_TEXT",
+                        metadata={"sheet_name": sheet_name},
+                    )
+                )
+                continue
+
+            # Calculate chunks
+            total_rows = len(df)
+            num_chunks = math.ceil(total_rows / self.ROW_LIMIT)
+
+            for i in range(num_chunks):
+                start_idx = i * self.ROW_LIMIT
+                end_idx = start_idx + self.ROW_LIMIT
+
+                # Slice the dataframe
+                chunk_df = df.iloc[start_idx:end_idx]
+
+                # Convert to markdown
+                # index=False usually cleaner for data tables unless index is meaningful
+                md_table = chunk_df.to_markdown(index=False, tablefmt="github")
+
+                if md_table:
+                    elements.append(
+                        ParsedElement(
+                            text=md_table,
+                            type="TABLE",
+                            metadata={
+                                "sheet_name": sheet_name,
+                                "chunk_index": i,
+                                "total_chunks": num_chunks,
+                                "row_start": start_idx,
+                                "row_end": min(end_idx, total_rows),
+                            },
+                        )
+                    )
+
+        return elements
