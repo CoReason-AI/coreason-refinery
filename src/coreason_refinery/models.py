@@ -26,6 +26,7 @@ class IngestionJob(BaseModel):
 
     id: UUID
     source_file_path: str
+    file_type: str = "auto"
     config: IngestionConfig
     status: Literal["PROCESSING", "COMPLETED", "FAILED"]
 
