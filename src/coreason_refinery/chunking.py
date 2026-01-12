@@ -8,8 +8,9 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_refinery
 
+import re
 import uuid
-from typing import List, Tuple
+from typing import Any, List, Tuple
 
 from coreason_refinery.models import IngestionConfig, RefinedChunk
 from coreason_refinery.parsing import ParsedElement
@@ -20,6 +21,15 @@ class SemanticChunker:
 
     def __init__(self, config: IngestionConfig):
         self.config = config
+
+    def _infer_depth(self, text: str) -> int:
+        """Infer header depth from numbering (e.g., '1.2' -> 2)."""
+        match = re.match(r"^(\d+(\.\d+)*)", text)
+        if match:
+            # "1" -> 1 (0 dots)
+            # "1.1" -> 2 (1 dot)
+            return match.group(1).count(".") + 1
+        return 1
 
     def chunk(self, elements: List[ParsedElement]) -> List[RefinedChunk]:
         """Convert parsed elements into refined chunks with semantic context.
@@ -39,10 +49,14 @@ class SemanticChunker:
         header_stack: List[Tuple[int, str]] = []
 
         current_buffer: List[str] = []
+        # Accumulate metadata from elements in the current chunk
+        current_metadata_accumulator: List[dict[str, Any]] = []
 
         # Helper to flush buffer
         def flush_buffer() -> None:
             if not current_buffer:
+                # Also clear metadata accumulator if we are not creating a chunk
+                current_metadata_accumulator.clear()
                 return
 
             # Join content
@@ -58,18 +72,30 @@ class SemanticChunker:
             else:
                 full_text = content_text
 
+            # Merge metadata
+            aggregated_meta: dict[str, Any] = {
+                "header_hierarchy": hierarchy_names,
+            }
+
+            # Collect page numbers specifically
+            page_numbers = set()
+            for m in current_metadata_accumulator:
+                if "page_number" in m:
+                    page_numbers.add(m["page_number"])
+                # We could merge other keys here if needed
+
+            if page_numbers:
+                aggregated_meta["page_numbers"] = sorted(list(page_numbers))
+
+            current_metadata_accumulator.clear()
+
             # Create Chunk
             chunks.append(
                 RefinedChunk(
                     id=str(uuid.uuid4()),
                     text=full_text,
                     vector=[],  # To be computed later
-                    metadata={
-                        "header_hierarchy": hierarchy_names,
-                        # We could add source_urn etc if available in element metadata,
-                        # but usually that comes from the Job level.
-                        # We'll merge element metadata later if needed.
-                    },
+                    metadata=aggregated_meta,
                 )
             )
 
@@ -86,14 +112,16 @@ class SemanticChunker:
                 flush_buffer()
 
                 # Determine depth
-                # Default to 1 if not specified.
-                # If we want to be smart, we could look at font size in metadata,
-                # but for now we rely on 'section_depth' or default.
-                depth = element.metadata.get("section_depth", 1)
+                if "section_depth" in element.metadata:
+                    depth = element.metadata["section_depth"]
+                else:
+                    depth = self._infer_depth(element.text)
 
-                # Pop headers that are deeper or equal to this new header
-                # Example: Stack=[(0, Title), (1, Intro)]. New is (1, Methods).
-                # Pop (1, Intro). Stack=[(0, Title), (1, Methods)].
+                # Pop headers that are deeper or equal to this new header.
+                # Crucial Fix: We must NOT pop depth 0 (TITLE) if the new depth is >= 1.
+                # Titles are roots (depth 0). Headers are depth >= 1.
+                # If we encounter a Header with depth 1, we should only pop existing headers
+                # that are >= 1. We keep 0.
                 while header_stack and header_stack[-1][0] >= depth:
                     header_stack.pop()
 
@@ -105,8 +133,20 @@ class SemanticChunker:
                 "LIST_ITEM",
                 "UNCATEGORIZED",
             ]:
+                text_to_add = element.text
+
+                # Handle speaker notes
+                notes = element.metadata.get("speaker_notes")
+                if notes:
+                    # Prepend speaker notes as context for this element
+                    text_to_add = f"Speaker Notes: {notes}\n{text_to_add}"
+
                 # Append to buffer
-                current_buffer.append(element.text)
+                current_buffer.append(text_to_add)
+
+                # Accumulate metadata
+                if element.metadata:
+                    current_metadata_accumulator.append(element.metadata)
 
             # Handle footer? Usually ignore or treat as metadata.
             # PRD mentions "Headers, Footers" in "Structure-Aware".
