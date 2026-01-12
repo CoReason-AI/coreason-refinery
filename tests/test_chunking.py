@@ -16,226 +16,178 @@ from coreason_refinery.parsing import ParsedElement
 
 @pytest.fixture
 def chunker() -> SemanticChunker:
-    config = IngestionConfig(chunk_strategy="HEADER", segment_len=500)
+    config = IngestionConfig()
     return SemanticChunker(config)
 
 
-def test_chunking_hierarchy(chunker: SemanticChunker) -> None:
-    """Test that chunks correctly inherit context from headers."""
+def test_hierarchy_stacking(chunker: SemanticChunker) -> None:
+    """Test that headers correctly push and pop from the context stack."""
     elements = [
-        ParsedElement(text="Protocol 123", type="TITLE", metadata={}),
-        ParsedElement(text="Introduction", type="HEADER", metadata={"section_depth": 1}),
-        ParsedElement(text="This is the intro.", type="NARRATIVE_TEXT", metadata={}),
-        ParsedElement(text="Safety", type="HEADER", metadata={"section_depth": 1}),
-        ParsedElement(text="Adverse Events", type="HEADER", metadata={"section_depth": 2}),
-        ParsedElement(text="Bad things happen.", type="NARRATIVE_TEXT", metadata={}),
+        ParsedElement(text="Protocol", type="TITLE"),
+        ParsedElement(text="1. Introduction", type="HEADER"),
+        ParsedElement(text="Text 1", type="NARRATIVE_TEXT"),
+        ParsedElement(text="1.1 Background", type="HEADER"),
+        ParsedElement(text="Text 1.1", type="NARRATIVE_TEXT"),
+        ParsedElement(text="2. Methods", type="HEADER"),
+        ParsedElement(text="Text 2", type="NARRATIVE_TEXT"),
     ]
 
     chunks = chunker.chunk(elements)
 
-    assert len(chunks) == 2
+    # Expectation:
+    # Chunk 0: Text 1. Context: Protocol > 1. Introduction
+    # Chunk 1: Text 1.1. Context: Protocol > 1. Introduction > 1.1 Background
+    # Chunk 2: Text 2. Context: Protocol > 2. Methods (1.1 and 1. should be popped)
 
-    # Chunk 1: Intro
-    # Context: Protocol 123 > Introduction
-    assert "Context: Protocol 123 > Introduction" in chunks[0].text
-    assert "This is the intro." in chunks[0].text
-    assert chunks[0].metadata["header_hierarchy"] == ["Protocol 123", "Introduction"]
+    assert len(chunks) == 3
 
-    # Chunk 2: Safety > Adverse Events
-    # Context: Protocol 123 > Safety > Adverse Events
-    assert "Context: Protocol 123 > Safety > Adverse Events" in chunks[1].text
-    assert "Bad things happen." in chunks[1].text
-    assert chunks[1].metadata["header_hierarchy"] == [
-        "Protocol 123",
-        "Safety",
-        "Adverse Events",
-    ]
+    # Check Chunk 0
+    assert chunks[0].metadata["header_hierarchy"] == ["Protocol", "1. Introduction"]
+    assert "Context: Protocol > 1. Introduction" in chunks[0].text
+    assert "Text 1" in chunks[0].text
+
+    # Check Chunk 1
+    assert chunks[1].metadata["header_hierarchy"] == ["Protocol", "1. Introduction", "1.1 Background"]
+    assert "Context: Protocol > 1. Introduction > 1.1 Background" in chunks[1].text
+    assert "Text 1.1" in chunks[1].text
+
+    # Check Chunk 2
+    # "2. Methods" (Depth 1) should pop "1.1" (Depth 2) AND "1. Introduction" (Depth 1)
+    # Stack should be ["Protocol", "2. Methods"]
+    assert chunks[2].metadata["header_hierarchy"] == ["Protocol", "2. Methods"]
+    assert "Context: Protocol > 2. Methods" in chunks[2].text
+    assert "Text 2" in chunks[2].text
 
 
-def test_chunking_implicit_depth(chunker: SemanticChunker) -> None:
-    """Test that headers without explicit depth default to level 1."""
+def test_table_rescue(chunker: SemanticChunker) -> None:
+    """Test Story A: Table spanning elements merged into one block."""
     elements = [
-        ParsedElement(text="Root", type="TITLE", metadata={}),
-        ParsedElement(text="Section A", type="HEADER", metadata={}),  # Default depth 1
-        ParsedElement(text="Content A", type="NARRATIVE_TEXT", metadata={}),
-        ParsedElement(text="Section B", type="HEADER", metadata={}),  # Default depth 1, should replace A
-        ParsedElement(text="Content B", type="NARRATIVE_TEXT", metadata={}),
-    ]
-
-    chunks = chunker.chunk(elements)
-
-    assert len(chunks) == 2
-    assert chunks[0].metadata["header_hierarchy"] == ["Root", "Section A"]
-    assert chunks[1].metadata["header_hierarchy"] == ["Root", "Section B"]
-
-
-def test_chunking_table_handling(chunker: SemanticChunker) -> None:
-    """Test that tables are included in the chunks."""
-    elements = [
-        ParsedElement(text="Results", type="HEADER", metadata={"section_depth": 1}),
-        ParsedElement(text="| A | B |", type="TABLE", metadata={}),
+        ParsedElement(text="1. Results", type="HEADER"),
+        ParsedElement(text="| Col1 |", type="TABLE"),
+        ParsedElement(text="| Val1 |", type="TABLE"),  # Simulating split table part 2
     ]
 
     chunks = chunker.chunk(elements)
 
     assert len(chunks) == 1
-    assert "| A | B |" in chunks[0].text
-    assert chunks[0].metadata["header_hierarchy"] == ["Results"]
+    chunk_text = chunks[0].text
+
+    # Verify both table parts are present
+    assert "| Col1 |" in chunk_text
+    assert "| Val1 |" in chunk_text
+    # Verify hierarchy
+    assert "Context: 1. Results" in chunk_text
 
 
-def test_empty_input(chunker: SemanticChunker) -> None:
-    """Test empty input list."""
-    chunks = chunker.chunk([])
-    assert chunks == []
+def test_speaker_notes(chunker: SemanticChunker) -> None:
+    """Test extraction and prepending of speaker notes."""
+    elements = [
+        ParsedElement(text="Slide 1", type="HEADER"),
+        ParsedElement(
+            text="Bullet Point 1",
+            type="LIST_ITEM",
+            metadata={"speaker_notes": "Don't forget to mention X"},
+        ),
+    ]
+
+    chunks = chunker.chunk(elements)
+
+    assert len(chunks) == 1
+    assert "Speaker Notes: Don't forget to mention X" in chunks[0].text
+    assert "Bullet Point 1" in chunks[0].text
 
 
 def test_title_reset(chunker: SemanticChunker) -> None:
-    """Test that a new TITLE resets the hierarchy."""
+    """Test that a new TITLE resets the hierarchy stack completely."""
     elements = [
-        ParsedElement(text="Doc 1", type="TITLE", metadata={}),
-        ParsedElement(text="Sec 1", type="HEADER", metadata={"section_depth": 1}),
-        ParsedElement(text="Content 1", type="NARRATIVE_TEXT", metadata={}),
-        ParsedElement(text="Doc 2", type="TITLE", metadata={}),  # Should clear Doc 1 and Sec 1
-        ParsedElement(text="Content 2", type="NARRATIVE_TEXT", metadata={}),
+        ParsedElement(text="Old Doc", type="TITLE"),
+        ParsedElement(text="Header 1", type="HEADER"),
+        ParsedElement(text="Content 1", type="NARRATIVE_TEXT"),
+        ParsedElement(text="New Doc", type="TITLE"),
+        ParsedElement(text="Header A", type="HEADER"),
+        ParsedElement(text="Content A", type="NARRATIVE_TEXT"),
     ]
 
     chunks = chunker.chunk(elements)
 
     assert len(chunks) == 2
 
-    # Chunk 1
-    assert chunks[0].metadata["header_hierarchy"] == ["Doc 1", "Sec 1"]
+    # Chunk 0 from Old Doc
+    assert chunks[0].metadata["header_hierarchy"] == ["Old Doc", "Header 1"]
 
-    # Chunk 2
-    assert chunks[1].metadata["header_hierarchy"] == ["Doc 2"]
-    assert "Content 2" in chunks[1].text
+    # Chunk 1 from New Doc
+    # Should NOT contain Old Doc or Header 1
+    assert "Old Doc" not in chunks[1].metadata["header_hierarchy"]
+    assert chunks[1].metadata["header_hierarchy"] == ["New Doc", "Header A"]
 
 
-def test_consecutive_headers(chunker: SemanticChunker) -> None:
-    """Test that consecutive headers don't produce empty chunks."""
+def test_implicit_depth_inference(chunker: SemanticChunker) -> None:
+    """Test logic for inferring depth from numbering."""
     elements = [
-        ParsedElement(text="H1", type="HEADER", metadata={"section_depth": 1}),
-        ParsedElement(text="H2", type="HEADER", metadata={"section_depth": 2}),
-        ParsedElement(text="Content", type="NARRATIVE_TEXT", metadata={}),
+        ParsedElement(text="Root", type="TITLE"),
+        ParsedElement(text="1. Top", type="HEADER"),  # Depth 1 inferred
+        ParsedElement(text="1.1 Sub", type="HEADER"),  # Depth 2 inferred
+        ParsedElement(text="Content", type="NARRATIVE_TEXT"),
     ]
 
     chunks = chunker.chunk(elements)
-
-    # Should only produce one chunk for the content under H2.
     assert len(chunks) == 1
-    assert chunks[0].metadata["header_hierarchy"] == ["H1", "H2"]
-    assert "Content" in chunks[0].text
+    assert chunks[0].metadata["header_hierarchy"] == ["Root", "1. Top", "1.1 Sub"]
+
+
+def test_no_header_doc(chunker: SemanticChunker) -> None:
+    """Test behavior with a document that has no headers."""
+    elements = [
+        ParsedElement(text="Just some text", type="NARRATIVE_TEXT"),
+        ParsedElement(text="More text", type="NARRATIVE_TEXT"),
+    ]
+
+    chunks = chunker.chunk(elements)
+    # Should produce 1 chunk with all text, empty context
+    assert len(chunks) == 1
+    assert chunks[0].metadata["header_hierarchy"] == []
+    assert "Just some text" in chunks[0].text
+    assert "More text" in chunks[0].text
+    # No "Context: " prefix if hierarchy is empty
+    assert "Context: " not in chunks[0].text
+
+
+def test_explicit_depth_override(chunker: SemanticChunker) -> None:
+    """Test that metadata 'section_depth' overrides inference."""
+    elements = [
+        ParsedElement(text="Root", type="TITLE"),
+        ParsedElement(text="First", type="HEADER", metadata={"section_depth": 1}),
+        ParsedElement(text="Second", type="HEADER", metadata={"section_depth": 2}),
+        ParsedElement(text="Content", type="NARRATIVE_TEXT"),
+    ]
+
+    chunks = chunker.chunk(elements)
+    assert chunks[0].metadata["header_hierarchy"] == ["Root", "First", "Second"]
+
+
+def test_chunk_page_numbers_aggregation(chunker: SemanticChunker) -> None:
+    """Test that page numbers are aggregated from all elements in a chunk."""
+    elements = [
+        ParsedElement(text="H1", type="HEADER"),
+        ParsedElement(text="P1", type="NARRATIVE_TEXT", metadata={"page_number": 1}),
+        ParsedElement(text="P2", type="NARRATIVE_TEXT", metadata={"page_number": 2}),
+    ]
+
+    chunks = chunker.chunk(elements)
+    assert len(chunks) == 1
+    # Check that both page 1 and 2 are recorded
+    assert chunks[0].metadata["page_numbers"] == [1, 2]
 
 
 def test_footer_ignored(chunker: SemanticChunker) -> None:
-    """Test that footers are ignored."""
+    """Test that footer elements are ignored."""
     elements = [
-        ParsedElement(text="H1", type="HEADER", metadata={"section_depth": 1}),
-        ParsedElement(text="Content", type="NARRATIVE_TEXT", metadata={}),
-        ParsedElement(text="Page 1", type="FOOTER", metadata={}),
-        ParsedElement(text="More Content", type="NARRATIVE_TEXT", metadata={}),
+        ParsedElement(text="Header", type="HEADER"),
+        ParsedElement(text="Content", type="NARRATIVE_TEXT"),
+        ParsedElement(text="Footer Text", type="FOOTER"),
     ]
 
     chunks = chunker.chunk(elements)
 
     assert len(chunks) == 1
-    assert "Content" in chunks[0].text
-    assert "Page 1" not in chunks[0].text
-    assert "More Content" in chunks[0].text
-
-
-def test_content_no_header(chunker: SemanticChunker) -> None:
-    """Test content without any header context."""
-    elements = [
-        ParsedElement(text="Just some text", type="NARRATIVE_TEXT", metadata={}),
-        ParsedElement(text="More text", type="NARRATIVE_TEXT", metadata={}),
-    ]
-
-    chunks = chunker.chunk(elements)
-
-    assert len(chunks) == 1
-    assert chunks[0].text == "Just some text\n\nMore text"
-    assert chunks[0].metadata["header_hierarchy"] == []
-    assert "Context:" not in chunks[0].text
-
-
-def test_complex_depth_jumps(chunker: SemanticChunker) -> None:
-    """Test non-linear depth changes (skipping levels)."""
-    elements = [
-        ParsedElement(text="Root", type="TITLE", metadata={}),
-        ParsedElement(text="H1", type="HEADER", metadata={"section_depth": 1}),
-        ParsedElement(text="H3", type="HEADER", metadata={"section_depth": 3}),  # Skips depth 2
-        ParsedElement(text="Content A", type="NARRATIVE_TEXT", metadata={}),
-        ParsedElement(text="H2", type="HEADER", metadata={"section_depth": 2}),  # Back up to 2
-        ParsedElement(text="Content B", type="NARRATIVE_TEXT", metadata={}),
-    ]
-
-    chunks = chunker.chunk(elements)
-
-    assert len(chunks) == 2
-
-    # Chunk 1: Root > H1 > H3
-    assert chunks[0].metadata["header_hierarchy"] == ["Root", "H1", "H3"]
-    assert "Content A" in chunks[0].text
-
-    # Chunk 2: Root > H1 > H2 (H3 should be popped, H1 retained as 1 < 2)
-    assert chunks[1].metadata["header_hierarchy"] == ["Root", "H1", "H2"]
-    assert "Content B" in chunks[1].text
-
-
-def test_mixed_content_types(chunker: SemanticChunker) -> None:
-    """Test mixing text, lists, and tables in one section."""
-    elements = [
-        ParsedElement(text="Section Mixed", type="HEADER", metadata={"section_depth": 1}),
-        ParsedElement(text="Intro text.", type="NARRATIVE_TEXT", metadata={}),
-        ParsedElement(text="* Item 1", type="LIST_ITEM", metadata={}),
-        ParsedElement(text="* Item 2", type="LIST_ITEM", metadata={}),
-        ParsedElement(text="| Col1 | Col2 |", type="TABLE", metadata={}),
-        ParsedElement(text="Outro text.", type="NARRATIVE_TEXT", metadata={}),
-    ]
-
-    chunks = chunker.chunk(elements)
-
-    assert len(chunks) == 1
-    text = chunks[0].text
-    assert "Context: Section Mixed" in text
-    assert "Intro text." in text
-    assert "* Item 1" in text
-    assert "* Item 2" in text
-    assert "| Col1 | Col2 |" in text
-    assert "Outro text." in text
-    # Verify order roughly
-    assert text.index("Intro text.") < text.index("| Col1 | Col2 |")
-
-
-def test_header_empty_text(chunker: SemanticChunker) -> None:
-    """Test a header with empty text string."""
-    elements = [
-        ParsedElement(text="Root", type="TITLE", metadata={}),
-        ParsedElement(text="", type="HEADER", metadata={"section_depth": 1}),
-        ParsedElement(text="Content", type="NARRATIVE_TEXT", metadata={}),
-    ]
-
-    chunks = chunker.chunk(elements)
-
-    assert len(chunks) == 1
-    # Should be ["Root", ""]
-    assert chunks[0].metadata["header_hierarchy"] == ["Root", ""]
-    # Context string should probably look like "Context: Root > " or similar.
-    assert "Context: Root > " in chunks[0].text
-
-
-def test_title_in_middle(chunker: SemanticChunker) -> None:
-    """Test a TITLE appearing in the middle of content."""
-    elements = [
-        ParsedElement(text="Doc 1", type="TITLE", metadata={}),
-        ParsedElement(text="Content 1", type="NARRATIVE_TEXT", metadata={}),
-        ParsedElement(text="Doc 2", type="TITLE", metadata={}),
-        ParsedElement(text="Content 2", type="NARRATIVE_TEXT", metadata={}),
-    ]
-
-    chunks = chunker.chunk(elements)
-
-    assert len(chunks) == 2
-    assert chunks[0].metadata["header_hierarchy"] == ["Doc 1"]
-    assert chunks[1].metadata["header_hierarchy"] == ["Doc 2"]
+    assert "Footer Text" not in chunks[0].text
