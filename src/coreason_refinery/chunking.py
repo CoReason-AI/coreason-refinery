@@ -23,7 +23,13 @@ class SemanticChunker:
         self.config = config
 
     def _infer_depth(self, text: str) -> int:
-        """Infer header depth from numbering (e.g., '1.2' -> 2)."""
+        """Infer header depth from numbering (e.g., '1.2' -> 2) or markdown (e.g., '##' -> 2)."""
+        # Check Markdown headers first
+        markdown_match = re.match(r"^\s*(#+)", text)
+        if markdown_match:
+            return len(markdown_match.group(1))
+
+        # Fallback to numbering
         match = re.match(r"^(\d+(\.\d+)*)", text)
         if match:
             # "1" -> 1 (0 dots)
