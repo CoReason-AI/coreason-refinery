@@ -25,7 +25,7 @@ class SemanticChunker:
     def _infer_depth(self, text: str) -> int:
         """Infer header depth from numbering (e.g., '1.2' -> 2) or markdown (e.g., '##' -> 2)."""
         # Check Markdown headers first
-        markdown_match = re.match(r"^(#+)", text)
+        markdown_match = re.match(r"^\s*(#+)", text)
         if markdown_match:
             return len(markdown_match.group(1))
 
