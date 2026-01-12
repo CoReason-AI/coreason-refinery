@@ -120,3 +120,83 @@ def test_depth_inference_edge_cases(chunker: SemanticChunker) -> None:
 
     # "Appendix A" -> 1 (Non-numeric)
     assert chunker._infer_depth("Appendix A") == 1
+
+
+def test_mixed_depth_sources(chunker: SemanticChunker) -> None:
+    """Test mixing explicit section_depth metadata with inferred depth."""
+    elements = [
+        ParsedElement(text="Root", type="TITLE", metadata={}),
+        # Explicit Depth 1
+        ParsedElement(text="Explicit 1", type="HEADER", metadata={"section_depth": 1}),
+        # Inferred Depth 2 ("1.1")
+        ParsedElement(text="1.1 Inferred", type="HEADER", metadata={}),
+        # Explicit Depth 3 (skips 2.1)
+        ParsedElement(text="Explicit 3", type="HEADER", metadata={"section_depth": 3}),
+        ParsedElement(text="Content", type="NARRATIVE_TEXT", metadata={}),
+    ]
+
+    chunks = chunker.chunk(elements)
+
+    assert len(chunks) == 1
+    hierarchy = chunks[0].metadata["header_hierarchy"]
+    assert hierarchy == ["Root", "Explicit 1", "1.1 Inferred", "Explicit 3"]
+
+
+def test_header_regex_edge_cases(chunker: SemanticChunker) -> None:
+    """Test _infer_depth with ambiguous inputs."""
+    # Date-like header: "2023.01.01 Review"
+    # Matches \d+(\.\d+)* -> "2023.01.01" -> 2 dots -> depth 3.
+    # This is "correct" for the regex logic, even if semantically debatable.
+    assert chunker._infer_depth("2023.01.01 Review") == 3
+
+    # Quantity-like: "10.5 kg limit"
+    # Matches "10.5" -> 1 dot -> depth 2.
+    assert chunker._infer_depth("10.5 kg limit") == 2
+
+    # Bullet-like? "1) Item" -> No match for ^\d+(\.\d+)* (unless we loosen regex)
+    # The current regex expects dot separators.
+    assert chunker._infer_depth("1) Item") == 1
+
+    # Leading whitespace? " 1.2 Title"
+    # Regex ^... matches start of string. Should be 1 (no match).
+    assert chunker._infer_depth(" 1.2 Title") == 1
+
+
+def test_disjoint_page_numbers(chunker: SemanticChunker) -> None:
+    """Test aggregation of page numbers from non-sequential pages."""
+    elements = [
+        ParsedElement(text="H1", type="HEADER", metadata={"page_number": 1}),
+        ParsedElement(text="A", type="NARRATIVE_TEXT", metadata={"page_number": 1}),
+        ParsedElement(text="B", type="NARRATIVE_TEXT", metadata={"page_number": 10}),
+        ParsedElement(text="C", type="NARRATIVE_TEXT", metadata={"page_number": 5}),
+    ]
+
+    chunks = chunker.chunk(elements)
+
+    assert len(chunks) == 1
+    # Should be sorted unique list
+    assert chunks[0].metadata["page_numbers"] == [1, 5, 10]
+
+
+def test_hierarchy_recovery(chunker: SemanticChunker) -> None:
+    """Test deep nesting popping back to shallow."""
+    elements = [
+        ParsedElement(text="Root", type="TITLE", metadata={}),
+        ParsedElement(text="1", type="HEADER", metadata={"section_depth": 1}),
+        ParsedElement(text="1.1", type="HEADER", metadata={"section_depth": 2}),
+        ParsedElement(text="1.1.1", type="HEADER", metadata={"section_depth": 3}),
+        ParsedElement(text="Deep Content", type="NARRATIVE_TEXT", metadata={}),
+        # Pop back to 1
+        ParsedElement(text="2", type="HEADER", metadata={"section_depth": 1}),
+        ParsedElement(text="Shallow Content", type="NARRATIVE_TEXT", metadata={}),
+    ]
+
+    chunks = chunker.chunk(elements)
+
+    assert len(chunks) == 2
+
+    # Chunk 1: Root > 1 > 1.1 > 1.1.1
+    assert chunks[0].metadata["header_hierarchy"] == ["Root", "1", "1.1", "1.1.1"]
+
+    # Chunk 2: Root > 2
+    assert chunks[1].metadata["header_hierarchy"] == ["Root", "2"]

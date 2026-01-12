@@ -117,21 +117,15 @@ class SemanticChunker:
                 else:
                     depth = self._infer_depth(element.text)
 
-                # Pop headers that are deeper or equal to this new header
-                # Example: Stack=[(0, Title), (1, Intro)]. New is (1, Methods).
-                # Pop (1, Intro). Stack=[(0, Title), (1, Methods)].
+                # Pop headers that are deeper or equal to this new header.
+                # Crucial Fix: We must NOT pop depth 0 (TITLE) if the new depth is >= 1.
+                # Titles are roots (depth 0). Headers are depth >= 1.
+                # If we encounter a Header with depth 1, we should only pop existing headers
+                # that are >= 1. We keep 0.
                 while header_stack and header_stack[-1][0] >= depth:
                     header_stack.pop()
 
                 header_stack.append((depth, element.text))
-
-                # Note: Header metadata (like page_number) is technically part of the START of this section.
-                # However, our current logic associates metadata with the content buffer.
-                # If a chunk consists ONLY of content following this header, should it inherit the header's page number?
-                # Probably not, the content has its own page number.
-                # But if the header is "Page 1", and content is "Page 1", it's fine.
-                # If we want to capture that this chunk *belongs* to a section that started on Page X, maybe?
-                # For now, we only aggregate metadata from content elements added to buffer.
 
             elif element.type in [
                 "NARRATIVE_TEXT",
