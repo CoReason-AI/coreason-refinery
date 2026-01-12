@@ -189,3 +189,116 @@ def test_auto_detection_failure(pipeline: RefineryPipeline) -> None:
 
     # It wraps ValueError in RuntimeError
     assert "Unsupported file type: auto" in str(excinfo.value)
+
+
+# --- New Edge Case Tests ---
+
+
+def test_process_empty_document(pipeline: RefineryPipeline, sample_job: IngestionJob) -> None:
+    """Test processing a document that results in zero parsed elements."""
+    with (
+        patch("coreason_refinery.pipeline.UnstructuredPdfParser") as MockPdfParser,
+        patch("coreason_refinery.pipeline.SemanticChunker") as MockChunker,
+    ):
+        # Parser returns empty list
+        MockPdfParser.return_value.parse.return_value = []
+        # Chunker returns empty list
+        MockChunker.return_value.chunk.return_value = []
+
+        sample_job.file_type = "pdf"
+        result = pipeline.process(sample_job)
+
+        assert result == []
+        MockPdfParser.return_value.parse.assert_called_once()
+        MockChunker.return_value.chunk.assert_called_once_with([])
+
+
+def test_process_case_insensitive_extension(pipeline: RefineryPipeline) -> None:
+    """Test that file extensions are case-insensitive (e.g., .PDF)."""
+    job = IngestionJob(
+        id=uuid.uuid4(),
+        source_file_path="/docs/IMPORTANT.PDF",
+        file_type="auto",
+        config=IngestionConfig(),
+        status="PROCESSING",
+    )
+
+    with (
+        patch("coreason_refinery.pipeline.UnstructuredPdfParser") as MockPdfParser,
+        patch("coreason_refinery.pipeline.SemanticChunker") as MockChunker,
+    ):
+        MockPdfParser.return_value.parse.return_value = []
+        MockChunker.return_value.chunk.return_value = []
+
+        pipeline.process(job)
+
+        # Should select PDF parser
+        MockPdfParser.assert_called_once()
+
+
+def test_process_no_extension(pipeline: RefineryPipeline) -> None:
+    """Test behavior when file has no extension."""
+    job = IngestionJob(
+        id=uuid.uuid4(),
+        source_file_path="/bin/executable_file",
+        file_type="auto",
+        config=IngestionConfig(),
+        status="PROCESSING",
+    )
+
+    with pytest.raises(RuntimeError) as excinfo:
+        pipeline.process(job)
+
+    # "Unsupported file type: auto" because no extension match found
+    assert "Unsupported file type: auto" in str(excinfo.value)
+
+
+def test_complex_data_flow(pipeline: RefineryPipeline) -> None:
+    """Test a full data flow scenario: Job -> Parser -> Chunker -> Result.
+
+    Verifies that configuration is passed to the chunker and the result from
+    the chunker is returned by the pipeline.
+    """
+    # 1. Setup Job
+    job = IngestionJob(
+        id=uuid.uuid4(),
+        source_file_path="/tmp/complex.pdf",
+        file_type="pdf",
+        config=IngestionConfig(chunk_strategy="HEADER", segment_len=1000),
+        status="PROCESSING",
+    )
+
+    # 2. Mock Data
+    elements = [ParsedElement(text="H1", type="HEADER", metadata={"depth": 1})]
+    chunks = [RefinedChunk(id="c1", text="Context: H1\n\nContent", vector=[], metadata={"header_hierarchy": ["H1"]})]
+
+    # 3. Patch
+    with (
+        patch("coreason_refinery.pipeline.UnstructuredPdfParser") as MockPdfParser,
+        patch("coreason_refinery.pipeline.SemanticChunker") as MockChunker,
+    ):
+        # Configure Mocks
+        parser = MockPdfParser.return_value
+        parser.parse.return_value = elements
+
+        chunker = MockChunker.return_value
+        chunker.chunk.return_value = chunks
+
+        # 4. Execute
+        result = pipeline.process(job)
+
+        # 5. Verify Assertions
+
+        # Parser called with correct path
+        parser.parse.assert_called_once_with("/tmp/complex.pdf")
+
+        # Chunker initialized with CORRECT CONFIG from job
+        MockChunker.assert_called_once_with(job.config)
+
+        # Chunker called with elements from parser
+        chunker.chunk.assert_called_once_with(elements)
+
+        # Result matches chunker output
+        assert len(result) == 1
+        assert result[0].id == "c1"
+        assert result[0].metadata["header_hierarchy"] == ["H1"]
