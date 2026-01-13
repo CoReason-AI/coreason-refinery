@@ -79,11 +79,6 @@ def test_speaker_notes_injection(chunker: SemanticChunker) -> None:
     assert "Speaker Notes: Don't forget to mention safety." in text
     assert "Speaker Notes: Also mention efficacy." in text
 
-    # Check order: Notes should ideally be near the content or at the start
-    # Implementation detail: We prepend/append to the content buffer
-    # If we append to buffer items, they appear mixed.
-    # The requirement is "prepend these notes to the text as context" (User: "deciding whether to prepend")
-    # We will assume they are part of the text body for now.
     assert "Bullet point 1" in text
 
 
@@ -158,8 +153,14 @@ def test_header_regex_edge_cases(chunker: SemanticChunker) -> None:
     assert chunker._infer_depth("1) Item") == 1
 
     # Leading whitespace? " 1.2 Title"
-    # Regex ^... matches start of string. Should be 1 (no match).
-    assert chunker._infer_depth(" 1.2 Title") == 1
+    # Updated expectation: The new regex allows leading whitespace \s*
+    assert chunker._infer_depth(" 1.2 Title") == 2
+
+    # "Section 1.2"
+    assert chunker._infer_depth("Section 1.2") == 2
+
+    # "Chapter 3.1.1"
+    assert chunker._infer_depth("Chapter 3.1.1") == 3
 
 
 def test_disjoint_page_numbers(chunker: SemanticChunker) -> None:
@@ -200,3 +201,39 @@ def test_hierarchy_recovery(chunker: SemanticChunker) -> None:
 
     # Chunk 2: Root > 2
     assert chunks[1].metadata["header_hierarchy"] == ["Root", "2"]
+
+
+def test_section_named_header_inference(chunker: SemanticChunker) -> None:
+    """Test that headers like 'Section 1.1' are correctly inferred as depth 2."""
+    elements = [
+        ParsedElement(text="Protocol", type="TITLE"),
+        ParsedElement(text="Section 1: Overview", type="HEADER"),
+        ParsedElement(text="Content 1", type="NARRATIVE_TEXT"),
+        ParsedElement(text="Section 1.1: Details", type="HEADER"),
+        ParsedElement(text="Content 1.1", type="NARRATIVE_TEXT"),
+    ]
+
+    chunks = chunker.chunk(elements)
+
+    assert len(chunks) == 2
+
+    # Chunk 0: Section 1
+    # Expect: Protocol > Section 1
+    assert chunks[0].metadata["header_hierarchy"] == ["Protocol", "Section 1: Overview"]
+
+    # Chunk 1: Section 1.1
+    # Expect: Protocol > Section 1 > Section 1.1
+    assert chunks[1].metadata["header_hierarchy"] == ["Protocol", "Section 1: Overview", "Section 1.1: Details"]
+
+
+def test_markdown_mixed_with_numbering(chunker: SemanticChunker) -> None:
+    """Test that markdown takes precedence, but if absent, numbering works."""
+    elements = [
+        ParsedElement(text="Doc", type="TITLE"),
+        ParsedElement(text="# Top Level", type="HEADER"),  # Markdown depth 1
+        ParsedElement(text="1.1 Sub", type="HEADER"),  # Numbering depth 2
+        ParsedElement(text="Content", type="NARRATIVE_TEXT"),
+    ]
+
+    chunks = chunker.chunk(elements)
+    assert chunks[0].metadata["header_hierarchy"] == ["Doc", "# Top Level", "1.1 Sub"]

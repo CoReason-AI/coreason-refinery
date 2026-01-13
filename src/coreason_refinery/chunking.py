@@ -29,8 +29,15 @@ class SemanticChunker:
         if markdown_match:
             return len(markdown_match.group(1))
 
-        # Fallback to numbering
-        match = re.match(r"^(\d+(\.\d+)*)", text)
+        # Check for labelled numbering like "Section 1.2" or "Chapter 3.1.1"
+        # We look for (Word) (Numbering)
+        labelled_match = re.match(r"^\s*(?:Section|Chapter|Part|Appendix)\s+(\d+(\.\d+)*)", text, re.IGNORECASE)
+        if labelled_match:
+            numbering = labelled_match.group(1)
+            return numbering.count(".") + 1
+
+        # Fallback to plain numbering
+        match = re.match(r"^\s*(\d+(\.\d+)*)", text)
         if match:
             # "1" -> 1 (0 dots)
             # "1.1" -> 2 (1 dot)
