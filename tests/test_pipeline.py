@@ -13,6 +13,7 @@ from typing import List
 from unittest.mock import patch
 
 import pytest
+
 from coreason_refinery.models import IngestionConfig, IngestionJob, RefinedChunk
 from coreason_refinery.parsing import ParsedElement
 from coreason_refinery.pipeline import RefineryPipeline

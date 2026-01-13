@@ -12,8 +12,9 @@ import uuid
 from typing import Any, Dict
 
 import pytest
-from coreason_refinery.models import IngestionConfig, IngestionJob, RefinedChunk
 from pydantic import ValidationError
+
+from coreason_refinery.models import IngestionConfig, IngestionJob, RefinedChunk
 
 
 def test_ingestion_config_defaults() -> None:
