@@ -11,13 +11,13 @@
 import os
 from typing import List
 
-from coreason_refinery.chunking import SemanticChunker
 from coreason_refinery.models import IngestionJob, RefinedChunk
 from coreason_refinery.parsing import (
     DocumentParser,
     ExcelParser,
     UnstructuredPdfParser,
 )
+from coreason_refinery.segmentation import SemanticChunker
 from coreason_refinery.utils.logger import logger
 
 
