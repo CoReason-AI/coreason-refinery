@@ -17,67 +17,92 @@ from coreason_refinery.parsing import ParsedElement
 
 
 class SemanticChunker:
-    """Chunks parsed elements based on semantic structure (headers/sections)."""
+    """Chunks parsed elements based on semantic structure (headers/sections).
+
+    Implements the 'Semantic Segmenter' (The Cutter) logic:
+    1. Header-Based Splitting: Splits on Markdown headers (#, ##).
+    2. Table Preservation: Merges tables spanning pages/elements.
+    3. Rolling Context: Prepends header hierarchy (Breadcrumbs).
+    """
 
     def __init__(self, config: IngestionConfig):
         self.config = config
 
     def _infer_depth(self, text: str) -> int:
-        """Infer header depth from numbering (e.g., '1.2' -> 2) or markdown (e.g., '##' -> 2)."""
-        # Check Markdown headers first
+        """Infer header depth from Markdown or numbering.
+
+        Priorities:
+        1. Markdown syntax (e.g., '##' -> 2).
+        2. Labeled sections (e.g., 'Section 1.2' -> 2).
+        3. Plain numbering (e.g., '1.2' -> 2).
+        4. Default to 1 if no pattern matches (though typically HEADER implies some structure).
+        """
+        # 1. Markdown headers
+        # Matches one or more '#' at the start, potentially after whitespace
         markdown_match = re.match(r"^\s*(#+)", text)
         if markdown_match:
             return len(markdown_match.group(1))
 
-        # Check for labelled numbering like "Section 1.2" or "Chapter 3.1.1"
-        # We look for (Word) (Numbering)
-        labelled_match = re.match(r"^\s*(?:Section|Chapter|Part|Appendix)\s+(\d+(\.\d+)*)", text, re.IGNORECASE)
+        # 2. Labeled Numbering (Section, Chapter, Part, Appendix)
+        # Case insensitive. Matches "Section 1.2.3" or "Appendix A.1".
+        # We allow alphanumeric numbering like "A.1" or "1.2".
+        labelled_match = re.match(
+            r"^\s*(?:Section|Chapter|Part|Appendix)\s+([A-Za-z0-9]+(?:\.[A-Za-z0-9]+)*)",
+            text,
+            re.IGNORECASE,
+        )
         if labelled_match:
             numbering = labelled_match.group(1)
+            # Count dots + 1. "A" -> 1. "A.1" -> 2.
             return numbering.count(".") + 1
 
-        # Fallback to plain numbering
-        match = re.match(r"^\s*(\d+(\.\d+)*)", text)
+        # 3. Plain Numbering
+        # Matches "1.2.3".
+        match = re.match(r"^\s*(\d+(?:\.\d+)*)", text)
         if match:
-            # "1" -> 1 (0 dots)
-            # "1.1" -> 2 (1 dot)
-            return match.group(1).count(".") + 1
+            numbering = match.group(1)
+            return numbering.count(".") + 1
+
+        # Default fallback
         return 1
 
     def chunk(self, elements: List[ParsedElement]) -> List[RefinedChunk]:
         """Convert parsed elements into refined chunks with semantic context.
 
-        Strategy:
+        Logic:
             - Iterate through elements.
-            - Maintain a stack of active headers (context).
-            - When a HEADER/TITLE is found:
-                1. Flush the current text buffer as a new chunk (if not empty).
-                2. Update the header stack based on depth.
-            - When CONTENT (Text, Table, List) is found:
-                1. Append to current text buffer.
+            - Maintain `header_stack`: list of (depth, text).
+            - On HEADER/TITLE:
+                - Flush current buffer to a RefinedChunk.
+                - Update `header_stack` based on depth.
+            - On Content (Text, Table, List):
+                - Append to buffer.
+                - Merge metadata (e.g. page numbers).
         """
         chunks: List[RefinedChunk] = []
-        # Stack of (depth, text).
-        # TITLE is depth 0. HEADER defaults to 1 unless specified.
+
+        # Stack entries: (depth, text)
+        # TITLE is always depth 0.
         header_stack: List[Tuple[int, str]] = []
 
         current_buffer: List[str] = []
-        # Accumulate metadata from elements in the current chunk
         current_metadata_accumulator: List[dict[str, Any]] = []
 
-        # Helper to flush buffer
         def flush_buffer() -> None:
+            """Finalize the current buffer into a RefinedChunk."""
             if not current_buffer:
-                # Also clear metadata accumulator if we are not creating a chunk
+                # If no content, we don't create a chunk.
+                # Just clear metadata.
                 current_metadata_accumulator.clear()
                 return
 
-            # Join content
+            # 1. Join content
+            # Double newline to separate paragraphs/elements cleanly in Markdown
             content_text = "\n\n".join(current_buffer)
             current_buffer.clear()
 
-            # Construct Context String
-            # "Context: Grandparent > Parent > Section \n\n [Actual Content]"
+            # 2. Construct Context String (Breadcrumbs)
+            # "Context: Grandparent > Parent > CurrentHeader"
             hierarchy_names = [h[1] for h in header_stack]
             if hierarchy_names:
                 context_prefix = "Context: " + " > ".join(hierarchy_names)
@@ -85,43 +110,43 @@ class SemanticChunker:
             else:
                 full_text = content_text
 
-            # Merge metadata
+            # 3. Aggregate Metadata
             aggregated_meta: dict[str, Any] = {
                 "header_hierarchy": hierarchy_names,
             }
 
-            # Collect page numbers specifically
+            # Collect unique page numbers
             page_numbers = set()
             for m in current_metadata_accumulator:
                 if "page_number" in m:
                     page_numbers.add(m["page_number"])
-                # We could merge other keys here if needed
 
             if page_numbers:
                 aggregated_meta["page_numbers"] = sorted(list(page_numbers))
 
+            # Clear accumulator
             current_metadata_accumulator.clear()
 
-            # Create Chunk
+            # 4. Create Chunk
             chunks.append(
                 RefinedChunk(
                     id=str(uuid.uuid4()),
                     text=full_text,
-                    vector=[],  # To be computed later
+                    vector=[],  # Defer embedding
                     metadata=aggregated_meta,
                 )
             )
 
         for element in elements:
+            # -- Handle Structure (TITLE / HEADER) --
             if element.type == "TITLE":
-                # Flush previous section
+                # A Title (like document title) resets the flow usually,
+                # or sits at the very top.
                 flush_buffer()
-
-                # Title is always root (0). Clear stack and add Title.
+                # Depth 0. Wipe stack.
                 header_stack = [(0, element.text)]
 
             elif element.type == "HEADER":
-                # Flush previous section
                 flush_buffer()
 
                 # Determine depth
@@ -130,16 +155,23 @@ class SemanticChunker:
                 else:
                     depth = self._infer_depth(element.text)
 
-                # Pop headers that are deeper or equal to this new header.
-                # Crucial Fix: We must NOT pop depth 0 (TITLE) if the new depth is >= 1.
-                # Titles are roots (depth 0). Headers are depth >= 1.
-                # If we encounter a Header with depth 1, we should only pop existing headers
-                # that are >= 1. We keep 0.
-                while header_stack and header_stack[-1][0] >= depth:
-                    header_stack.pop()
+                # Update Stack
+                # Pop headers that are deeper or same depth (siblings/children of siblings)
+                # But NEVER pop depth 0 (TITLE) if we are adding a depth >= 1.
+                # Titles (0) persist until a new Title.
+                while header_stack:
+                    last_depth, _ = header_stack[-1]
+                    # If existing header is deeper (more specific) or same depth (sibling)
+                    # we pop it to make room for the new one.
+                    # Exception: If existing is Root (0) and new is Header (>=1), keep Root.
+                    if last_depth >= depth:
+                        header_stack.pop()
+                    else:
+                        break
 
                 header_stack.append((depth, element.text))
 
+            # -- Handle Content (Text, Table, List, etc.) --
             elif element.type in [
                 "NARRATIVE_TEXT",
                 "TABLE",
@@ -148,29 +180,22 @@ class SemanticChunker:
             ]:
                 text_to_add = element.text
 
-                # Handle speaker notes
+                # "Speaker Notes" Extraction
+                # PRD 3.1: "Must extract Speaker Notes and append them as context"
+                # We prepend them to the content block.
                 notes = element.metadata.get("speaker_notes")
                 if notes:
-                    # Prepend speaker notes as context for this element
                     text_to_add = f"Speaker Notes: {notes}\n{text_to_add}"
 
-                # Append to buffer
                 current_buffer.append(text_to_add)
 
-                # Accumulate metadata
                 if element.metadata:
                     current_metadata_accumulator.append(element.metadata)
 
-            # Handle footer? Usually ignore or treat as metadata.
-            # PRD mentions "Headers, Footers" in "Structure-Aware".
-            # Parsing.py has FOOTER type.
-            elif element.type == "FOOTER":
-                # We generally ignore footers in the main narrative text
-                # to avoid breaking the flow, or add them as metadata.
-                # For now, let's ignore them in the text stream.
-                pass
+            # -- Ignore Others (FOOTER, etc.) --
+            # Footers are generally page artifacts, not semantic content.
 
-        # Flush any remaining buffer at the end
+        # End of elements: Flush remaining buffer
         flush_buffer()
 
         return chunks
