@@ -9,7 +9,6 @@
 # Source Code: https://github.com/CoReason-AI/coreason_refinery
 
 import pytest
-
 from coreason_refinery.models import IngestionConfig
 from coreason_refinery.parsing import ParsedElement
 from coreason_refinery.segmentation import SemanticChunker

@@ -11,6 +11,7 @@
 from unittest.mock import patch
 
 import pytest
+from coreason_refinery.parsing import UnstructuredPdfParser
 from unstructured.documents.elements import (
     ElementMetadata,
     Footer,
@@ -20,8 +21,6 @@ from unstructured.documents.elements import (
     Table,
     Title,
 )
-
-from coreason_refinery.parsing import UnstructuredPdfParser
 
 
 @pytest.fixture
