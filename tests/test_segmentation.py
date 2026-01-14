@@ -121,18 +121,27 @@ def test_title_reset(chunker: SemanticChunker) -> None:
     assert chunks[1].metadata["header_hierarchy"] == ["New Doc", "Header A"]
 
 
-def test_implicit_depth_inference(chunker: SemanticChunker) -> None:
-    """Test logic for inferring depth from numbering."""
-    elements = [
-        ParsedElement(text="Root", type="TITLE"),
-        ParsedElement(text="1. Top", type="HEADER"),  # Depth 1 inferred
-        ParsedElement(text="1.1 Sub", type="HEADER"),  # Depth 2 inferred
-        ParsedElement(text="Content", type="NARRATIVE_TEXT"),
-    ]
+def test_infer_depth_logic(chunker: SemanticChunker) -> None:
+    """Test logic for inferring depth from various patterns."""
 
-    chunks = chunker.chunk(elements)
-    assert len(chunks) == 1
-    assert chunks[0].metadata["header_hierarchy"] == ["Root", "1. Top", "1.1 Sub"]
+    # 1. Markdown
+    assert chunker._infer_depth("# Heading 1") == 1
+    assert chunker._infer_depth("## Heading 2") == 2
+    assert chunker._infer_depth("### Heading 3") == 3
+
+    # 2. Labeled
+    assert chunker._infer_depth("Section 1") == 1
+    assert chunker._infer_depth("Chapter 2.1") == 2
+    assert chunker._infer_depth("Part 3.1.1") == 3
+    assert chunker._infer_depth("Appendix A.1") == 2  # 1 dot -> 2
+
+    # 3. Plain Numbering
+    assert chunker._infer_depth("1. Top") == 1
+    assert chunker._infer_depth("1.2 Sub") == 2
+    assert chunker._infer_depth("1.2.3 Deep") == 3
+
+    # 4. Fallback
+    assert chunker._infer_depth("Introduction") == 1
 
 
 def test_no_header_doc(chunker: SemanticChunker) -> None:
@@ -191,3 +200,24 @@ def test_footer_ignored(chunker: SemanticChunker) -> None:
 
     assert len(chunks) == 1
     assert "Footer Text" not in chunks[0].text
+
+
+def test_mixed_hierarchy(chunker: SemanticChunker) -> None:
+    """Test mixed hierarchy types (Markdown + Labeled)."""
+    elements = [
+        ParsedElement(text="# Root", type="HEADER"),  # Depth 1 (Markdown)
+        ParsedElement(text="Section 1.1", type="HEADER"),  # Depth 2 (Labeled)
+        ParsedElement(text="Content", type="NARRATIVE_TEXT"),
+        ParsedElement(text="## Branch", type="HEADER"),  # Depth 2 (Markdown)
+        ParsedElement(text="More Content", type="NARRATIVE_TEXT"),  # Added content so Chunk 2 is created
+    ]
+
+    chunks = chunker.chunk(elements)
+    assert len(chunks) == 2
+
+    # Chunk 0
+    assert chunks[0].metadata["header_hierarchy"] == ["# Root", "Section 1.1"]
+
+    # Chunk 1
+    # ## Branch (Depth 2) should pop Section 1.1 (Depth 2) but keep # Root (Depth 1)
+    assert chunks[1].metadata["header_hierarchy"] == ["# Root", "## Branch"]
