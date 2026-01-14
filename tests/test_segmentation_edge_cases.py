@@ -16,114 +16,82 @@ from coreason_refinery.segmentation import SemanticChunker
 
 @pytest.fixture
 def chunker() -> SemanticChunker:
-    config = IngestionConfig(chunk_strategy="HEADER", segment_len=500)
+    config = IngestionConfig()
     return SemanticChunker(config)
 
 
-def test_trailing_dots_numbering(chunker: SemanticChunker) -> None:
-    """Test that '1.' and '1.1.' are handled correctly."""
-    # "1." -> Matches "1" -> Depth 1
-    # "1.1." -> Matches "1.1" -> Depth 2
+def test_skipping_levels(chunker: SemanticChunker) -> None:
+    """Test behavior when hierarchy skips levels (H1 -> H3)."""
     elements = [
-        ParsedElement(text="Doc", type="TITLE"),
-        ParsedElement(text="1. Introduction", type="HEADER"),
+        ParsedElement(text="# H1", type="HEADER"),  # Depth 1
         ParsedElement(text="Content 1", type="NARRATIVE_TEXT"),
-        ParsedElement(text="1.1. Background", type="HEADER"),
-        ParsedElement(text="Content 1.1", type="NARRATIVE_TEXT"),
+        ParsedElement(text="### H3", type="HEADER"),  # Depth 3
+        ParsedElement(text="Content 3", type="NARRATIVE_TEXT"),
     ]
 
     chunks = chunker.chunk(elements)
     assert len(chunks) == 2
 
-    # Chunk 0
-    assert chunks[0].metadata["header_hierarchy"] == ["Doc", "1. Introduction"]
-
     # Chunk 1
-    # Should nest 1.1 under 1
-    assert chunks[1].metadata["header_hierarchy"] == ["Doc", "1. Introduction", "1.1. Background"]
+    assert chunks[0].metadata["header_hierarchy"] == ["# H1"]
+
+    # Chunk 2
+    # H3 should simply push onto H1
+    assert chunks[1].metadata["header_hierarchy"] == ["# H1", "### H3"]
 
 
-def test_hierarchy_skipping(chunker: SemanticChunker) -> None:
-    """Test skipping levels (e.g. 1 -> 1.1.1)."""
+def test_backtracking_levels(chunker: SemanticChunker) -> None:
+    """Test behavior when hierarchy backtracks (H1 -> H3 -> H2)."""
     elements = [
-        ParsedElement(text="Root", type="TITLE"),
-        ParsedElement(text="1. Top", type="HEADER"),
-        # Skip 1.1, go straight to 1.1.1 (Depth 3)
-        ParsedElement(text="1.1.1 Deep", type="HEADER"),
-        ParsedElement(text="Content Deep", type="NARRATIVE_TEXT"),
-    ]
-
-    chunks = chunker.chunk(elements)
-
-    # Only one chunk is produced because intermediate headers have no content
-    assert len(chunks) == 1
-    # The hierarchy should reflect the skip naturally
-    assert chunks[0].metadata["header_hierarchy"] == ["Root", "1. Top", "1.1.1 Deep"]
-
-
-def test_mixed_numbered_and_unnumbered(chunker: SemanticChunker) -> None:
-    """Test interaction between numbered sections and unnumbered 'semantic' headers."""
-    elements = [
-        ParsedElement(text="Root", type="TITLE"),
-        ParsedElement(text="1. Intro", type="HEADER"),
-        ParsedElement(text="Text", type="NARRATIVE_TEXT"),
-        # "Methodology" has no number -> Depth 1 (default)
-        # Should pop "1. Intro"
-        ParsedElement(text="Methodology", type="HEADER"),
-        ParsedElement(text="Text", type="NARRATIVE_TEXT"),
-        # "2. Results" -> Depth 1
-        # Should pop "Methodology"
-        ParsedElement(text="2. Results", type="HEADER"),
-        ParsedElement(text="2.1 Analysis", type="HEADER"),
-        ParsedElement(text="Analysis Content", type="NARRATIVE_TEXT"),
+        ParsedElement(text="# H1", type="HEADER"),  # Depth 1
+        ParsedElement(text="Content 1", type="NARRATIVE_TEXT"),
+        ParsedElement(text="### H3", type="HEADER"),  # Depth 3
+        ParsedElement(text="Content 3", type="NARRATIVE_TEXT"),
+        ParsedElement(text="## H2", type="HEADER"),  # Depth 2
+        ParsedElement(text="Content 2", type="NARRATIVE_TEXT"),
     ]
 
     chunks = chunker.chunk(elements)
     assert len(chunks) == 3
 
-    assert chunks[0].metadata["header_hierarchy"] == ["Root", "1. Intro"]
-    assert chunks[1].metadata["header_hierarchy"] == ["Root", "Methodology"]
-    assert chunks[2].metadata["header_hierarchy"] == ["Root", "2. Results", "2.1 Analysis"]
+    # Chunk 3 (H2)
+    # H2 (Depth 2) should pop H3 (Depth 3) but keep H1 (Depth 1)
+    assert chunks[2].metadata["header_hierarchy"] == ["# H1", "## H2"]
 
 
-def test_deeply_nested_numbering(chunker: SemanticChunker) -> None:
-    """Test very deep nesting."""
-    depth_str = "1.2.3.4.5.6.7"
-    text = f"{depth_str} Abyss"
-    depth = chunker._infer_depth(text)
-    assert depth == 7
-
+def test_header_no_content_then_shallower(chunker: SemanticChunker) -> None:
+    """Test a header with no content followed by a shallower header (H1 -> H2(empty) -> H1)."""
     elements = [
-        ParsedElement(text="Root", type="TITLE"),
-        ParsedElement(text=text, type="HEADER"),
-        ParsedElement(text="Hello", type="NARRATIVE_TEXT"),
-    ]
-    chunks = chunker.chunk(elements)
-    assert chunks[0].metadata["header_hierarchy"] == ["Root", text]
-
-
-def test_whitespace_chaos(chunker: SemanticChunker) -> None:
-    """Test erratic whitespace handling."""
-    elements = [
-        ParsedElement(text="   1.   Start", type="HEADER"),  # Matches "1" -> Depth 1
-        ParsedElement(text="Content", type="NARRATIVE_TEXT"),
-        ParsedElement(text="\t1.1\tSub", type="HEADER"),  # Matches "1.1" -> Depth 2
-        ParsedElement(text="Content", type="NARRATIVE_TEXT"),
+        ParsedElement(text="# H1 A", type="HEADER"),
+        ParsedElement(text="Content A", type="NARRATIVE_TEXT"),
+        ParsedElement(text="## H2 Empty", type="HEADER"),
+        # No content
+        ParsedElement(text="# H1 B", type="HEADER"),
+        ParsedElement(text="Content B", type="NARRATIVE_TEXT"),
     ]
 
     chunks = chunker.chunk(elements)
+    # Chunk 1: Content A under H1 A
+    # Chunk 2: Content B under H1 B
+    # H2 Empty produces nothing and is popped by H1 B.
 
-    assert chunks[0].metadata["header_hierarchy"] == ["   1.   Start"]
-    assert chunks[1].metadata["header_hierarchy"] == ["   1.   Start", "\t1.1\tSub"]
+    assert len(chunks) == 2
+
+    assert chunks[0].metadata["header_hierarchy"] == ["# H1 A"]
+    assert chunks[1].metadata["header_hierarchy"] == ["# H1 B"]
 
 
-def test_labeled_section_variants(chunker: SemanticChunker) -> None:
-    """Test various labeled section formats."""
-    # Section 1.2
-    assert chunker._infer_depth("Section 1.2") == 2
-    # PART III (Roman not supported yet, falls back to 1)
-    assert chunker._infer_depth("PART III") == 1
-    # APPENDIX 5.1
-    assert chunker._infer_depth("APPENDIX 5.1") == 2
-    # chapter 10
-    assert chunker._infer_depth("chapter 10") == 1
+def test_duplicate_headers_same_level(chunker: SemanticChunker) -> None:
+    """Test consecutive headers at the same level."""
+    elements = [
+        ParsedElement(text="# H1 A", type="HEADER"),
+        ParsedElement(text="Content A", type="NARRATIVE_TEXT"),
+        ParsedElement(text="# H1 B", type="HEADER"),
+        ParsedElement(text="Content B", type="NARRATIVE_TEXT"),
+    ]
+
+    chunks = chunker.chunk(elements)
+    assert len(chunks) == 2
+
+    # H1 B should pop H1 A
+    assert chunks[1].metadata["header_hierarchy"] == ["# H1 B"]
