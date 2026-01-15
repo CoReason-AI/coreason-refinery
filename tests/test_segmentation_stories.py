@@ -8,7 +8,6 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_refinery
 
-import pytest
 from coreason_refinery.models import IngestionConfig
 from coreason_refinery.parsing import ParsedElement
 from coreason_refinery.segmentation import SemanticChunker
@@ -29,7 +28,7 @@ def test_story_a_table_rescue_large_table() -> None:
     # Total length > 100 chars
     row_part_1 = "| Dose | Response |\n| --- | --- |\n" + ("| 10mg | Good |\n" * 5)  # ~80 chars
     row_part_2 = "| 20mg | Better |\n" * 5  # ~80 chars
-    row_part_3 = "| 30mg | Best |\n" * 5    # ~80 chars
+    row_part_3 = "| 30mg | Best |\n" * 5  # ~80 chars
 
     elements = [
         ParsedElement(text="# Protocol 999", type="TITLE", metadata={"page_number": 1}),
