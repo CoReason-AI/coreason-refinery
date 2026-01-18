@@ -99,3 +99,38 @@ def test_story_b_header_context_breadcrumbs() -> None:
     expected_context = "Context: Protocol 999 > Section 4: Toxicity > Grade 4 Events"
     assert expected_context in target_chunk.text
     assert target_chunk.text.startswith(expected_context)
+
+
+def test_single_large_table_atomicity() -> None:
+    """
+    AUC-5: Verify single large table element atomicity.
+    Requirement: A single TABLE element exceeding segment_len must NOT be split.
+    """
+    # Set segment_len to be very small
+    segment_len = 50
+    config = IngestionConfig(chunk_strategy="HEADER", segment_len=segment_len)
+    chunker = SemanticChunker(config)
+
+    # Create a large table text significantly larger than segment_len
+    large_table_text = "| Col1 | Col2 |\n| --- | --- |\n"
+    for i in range(20):
+        large_table_text += f"| Row {i} | Data {i} |\n"
+
+    # Verify we created a large enough string
+    assert len(large_table_text) > segment_len * 2
+
+    elements = [
+        ParsedElement(text="# Header", type="HEADER", metadata={"section_depth": 1}),
+        ParsedElement(text=large_table_text, type="TABLE", metadata={"page_number": 1}),
+    ]
+
+    chunks = chunker.chunk(elements)
+
+    # Should be exactly 1 chunk (Header + Table)
+    assert len(chunks) == 1
+
+    chunk = chunks[0]
+    # Verify the entire table text is present in the chunk
+    assert large_table_text in chunk.text
+    # Verify length is > segment_len (plus context overhead)
+    assert len(chunk.text) > segment_len
