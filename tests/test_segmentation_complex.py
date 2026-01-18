@@ -135,3 +135,99 @@ def test_table_broken_by_header(chunker: SemanticChunker) -> None:
 
     assert "| Table Part 2 |" in chunks[1].text
     assert "Context: # Section 2" in chunks[1].text
+
+
+def test_complex_mixed_attributes(chunker: SemanticChunker) -> None:
+    """
+    Test complex scenario with mixed attributes:
+    - Deep nesting (Appendix A.1.2)
+    - Table with Speaker Notes (Metadata injection)
+    - Multiple tables in one section (Merged into one chunk)
+    """
+    elements = [
+        ParsedElement(text="Research Report", type="TITLE"),
+        ParsedElement(text="Appendix A", type="HEADER"),
+        ParsedElement(text="A.1 Data", type="HEADER"),
+        ParsedElement(text="A.1.2 Tables", type="HEADER"),
+
+        # Content Start
+        ParsedElement(text="Here is the data.", type="NARRATIVE_TEXT"),
+
+        # Table with Speaker Notes
+        ParsedElement(
+            text="| ID | Value |\n| -- | -- |\n| 1 | 100 |",
+            type="TABLE",
+            metadata={"speaker_notes": "Emphasize the value 100 here."}
+        ),
+
+        # Another Table immediately following
+        ParsedElement(
+            text="| ID | Value |\n| -- | -- |\n| 2 | 200 |",
+            type="TABLE"
+        ),
+    ]
+
+    chunks = chunker.chunk(elements)
+
+    # Expectation:
+    # Hierarchy: Research Report > Appendix A > A.1 Data > A.1.2 Tables
+    # One single chunk containing: Narrative + Table 1 (w/ notes) + Table 2
+
+    assert len(chunks) == 1
+    chunk = chunks[0]
+
+    # Check Hierarchy Context
+    expected_hierarchy = ["Research Report", "Appendix A", "A.1 Data", "A.1.2 Tables"]
+    assert chunk.metadata["header_hierarchy"] == expected_hierarchy
+    assert "Context: Research Report > Appendix A > A.1 Data > A.1.2 Tables" in chunk.text
+
+    # Check Content Merging
+    assert "Here is the data." in chunk.text
+    assert "| 1 | 100 |" in chunk.text
+    assert "| 2 | 200 |" in chunk.text
+
+    # Check Speaker Notes Injection
+    # "Speaker Notes: Emphasize the value 100 here.\n| ID | Value |..."
+    assert "Speaker Notes: Emphasize the value 100 here." in chunk.text
+
+
+def test_edge_case_empty_title_and_orphaned_content(chunker: SemanticChunker) -> None:
+    """
+    Test edge cases:
+    - Empty TITLE string.
+    - Content before any header (Orphaned).
+    """
+    elements = [
+        # Orphaned content at start (Should have no context prefix, or just own content)
+        ParsedElement(text="Orphaned text.", type="NARRATIVE_TEXT"),
+
+        # Empty Title (Should reset stack)
+        ParsedElement(text="", type="TITLE"),
+
+        # Header after empty title
+        ParsedElement(text="Section 1", type="HEADER"),
+        ParsedElement(text="Section content.", type="NARRATIVE_TEXT"),
+    ]
+
+    chunks = chunker.chunk(elements)
+
+    # Expectation:
+    # Chunk 0: Orphaned text. Hierarchy: [].
+    # Chunk 1: Section 1 content. Hierarchy: ["", "Section 1"] (Title is empty string)
+
+    assert len(chunks) == 2
+
+    # Chunk 0
+    assert chunks[0].text.strip() == "Orphaned text."
+    assert chunks[0].metadata["header_hierarchy"] == []
+
+    # Chunk 1
+    # Title text is empty string, so it effectively adds nothing visible to breadcrumbs if we just join
+    # But it is in the stack.
+    # Context:  > Section 1  (Because empty string joined).
+    assert "Section content." in chunks[1].text
+    assert chunks[1].metadata["header_hierarchy"] == ["", "Section 1"]
+
+    # Verify context string formatting with empty title
+    # "Context:  > Section 1"
+    assert "Context:  > Section 1" in chunks[1].text
