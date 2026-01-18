@@ -99,14 +99,14 @@ def test_hierarchy_skipping_complex() -> None:
 
     # Chunk 0 (Content 1): Context: Root > Level 1
     assert "Content 1" in chunks[0].text
-    assert "Context: # Root > # Level 1" in chunks[0].text
+    assert "Context: Root > Level 1" in chunks[0].text
 
     # Chunk 1 (Content 3): Context: Root > Level 1 > Level 3
     assert "Content 3" in chunks[1].text
-    assert "Context: # Root > # Level 1 > ### Level 3" in chunks[1].text
+    assert "Context: Root > Level 1 > Level 3" in chunks[1].text
 
     # Chunk 2 (Content 2): Context: Root > Level 1 > Level 2
     # Logic: H2 (depth 2) is shallower than H3 (depth 3), so H3 pops.
     #        H2 (depth 2) is deeper than H1 (depth 1), so H1 stays.
     assert "Content 2" in chunks[2].text
-    assert "Context: # Root > # Level 1 > ## Level 2" in chunks[2].text
+    assert "Context: Root > Level 1 > Level 2" in chunks[2].text

@@ -236,4 +236,5 @@ def test_markdown_mixed_with_numbering(chunker: SemanticChunker) -> None:
     ]
 
     chunks = chunker.chunk(elements)
-    assert chunks[0].metadata["header_hierarchy"] == ["Doc", "# Top Level", "1.1 Sub"]
+    # The header cleaner strips leading hashes, so "# Top Level" becomes "Top Level"
+    assert chunks[0].metadata["header_hierarchy"] == ["Doc", "Top Level", "1.1 Sub"]
