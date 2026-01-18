@@ -52,35 +52,6 @@ class DocumentParser(ABC):
         pass  # pragma: no cover
 
 
-class MockParser(DocumentParser):
-    """A mock parser for testing and development purposes."""
-
-    def parse(self, file_path: str) -> List[ParsedElement]:
-        """Returns a fixed set of elements for testing."""
-        return [
-            ParsedElement(
-                text="# Clinical Protocol",
-                type="TITLE",
-                metadata={"page_number": 1},
-            ),
-            ParsedElement(
-                text="1. Introduction",
-                type="HEADER",
-                metadata={"page_number": 1, "section_depth": 1},
-            ),
-            ParsedElement(
-                text="This is a study about Cisplatin.",
-                type="NARRATIVE_TEXT",
-                metadata={"page_number": 1},
-            ),
-            ParsedElement(
-                text="| Dose | Response |\n| --- | --- |\n| 10mg | Good |",
-                type="TABLE",
-                metadata={"page_number": 2, "is_table": True},
-            ),
-        ]
-
-
 class UnstructuredPdfParser(DocumentParser):
     """PDF parser using the unstructured library."""
 

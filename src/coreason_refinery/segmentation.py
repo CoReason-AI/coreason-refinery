@@ -57,11 +57,17 @@ class SemanticChunker:
             return numbering.count(".") + 1
 
         # 3. Plain Numbering
-        # Matches "1.2.3".
-        match = re.match(r"^\s*(\d+(?:\.\d+)*)", text)
+        # Matches "1.2.3" or "A.1.2".
+        # We require at least one dot for alphanumeric start to avoid matching simple words like "A".
+        match = re.match(r"^\s*([A-Za-z0-9]+(?:\.[A-Za-z0-9]+)+)", text)
         if match:
             numbering = match.group(1)
             return numbering.count(".") + 1
+
+        # Fallback for simple digit-only numbering without dots (e.g. "1. Introduction")
+        match_digit = re.match(r"^\s*(\d+)\.?", text)
+        if match_digit:
+            return 1
 
         # Default fallback
         return 1
