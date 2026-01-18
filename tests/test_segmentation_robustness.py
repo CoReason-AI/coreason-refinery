@@ -64,18 +64,15 @@ def test_markdown_variations_and_whitespace(chunker: SemanticChunker) -> None:
     # "   #   Messy Header   " should be depth 1 based on regex `^\s*(#+)` -> match `#` -> len 1.
     # Wait, TITLE is always forced to Depth 0 in logic.
 
-    assert chunks[0].metadata["header_hierarchy"] == [
-        "   #   Messy Header   ",
-        "## Clean Header ##"
-    ]
+    assert chunks[0].metadata["header_hierarchy"] == ["   #   Messy Header   ", "## Clean Header ##"]
 
 
 def test_missing_optional_metadata(chunker: SemanticChunker) -> None:
     """Test graceful handling of elements with missing or None metadata."""
     elements = [
         ParsedElement(text="Title", type="TITLE", metadata={}),
-        ParsedElement(text="# Header", type="HEADER", metadata={}), # No page number, no depth
-        ParsedElement(text="Content", type="NARRATIVE_TEXT", metadata={}), # Empty metadata
+        ParsedElement(text="# Header", type="HEADER", metadata={}),  # No page number, no depth
+        ParsedElement(text="Content", type="NARRATIVE_TEXT", metadata={}),  # Empty metadata
     ]
 
     chunks = chunker.chunk(elements)
@@ -116,10 +113,10 @@ def test_alphanumeric_inference_robustness(chunker: SemanticChunker) -> None:
 
     elements = [
         ParsedElement(text="Doc", type="TITLE"),
-        ParsedElement(text="A. Introduction", type="HEADER"), # Should be Depth 1 (Fallback)
-        ParsedElement(text="A.1 Subsection", type="HEADER"), # Should be Depth 2
+        ParsedElement(text="A. Introduction", type="HEADER"),  # Should be Depth 1 (Fallback)
+        ParsedElement(text="A.1 Subsection", type="HEADER"),  # Should be Depth 2
         ParsedElement(text="Content A.1", type="NARRATIVE_TEXT"),
-        ParsedElement(text="B. Next Section", type="HEADER"), # Should be Depth 1 (Fallback) - Pops A.1 and A.
+        ParsedElement(text="B. Next Section", type="HEADER"),  # Should be Depth 1 (Fallback) - Pops A.1 and A.
         ParsedElement(text="Content B", type="NARRATIVE_TEXT"),
     ]
 

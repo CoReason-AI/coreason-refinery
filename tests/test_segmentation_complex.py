@@ -149,22 +149,16 @@ def test_complex_mixed_attributes(chunker: SemanticChunker) -> None:
         ParsedElement(text="Appendix A", type="HEADER"),
         ParsedElement(text="A.1 Data", type="HEADER"),
         ParsedElement(text="A.1.2 Tables", type="HEADER"),
-
         # Content Start
         ParsedElement(text="Here is the data.", type="NARRATIVE_TEXT"),
-
         # Table with Speaker Notes
         ParsedElement(
             text="| ID | Value |\n| -- | -- |\n| 1 | 100 |",
             type="TABLE",
-            metadata={"speaker_notes": "Emphasize the value 100 here."}
+            metadata={"speaker_notes": "Emphasize the value 100 here."},
         ),
-
         # Another Table immediately following
-        ParsedElement(
-            text="| ID | Value |\n| -- | -- |\n| 2 | 200 |",
-            type="TABLE"
-        ),
+        ParsedElement(text="| ID | Value |\n| -- | -- |\n| 2 | 200 |", type="TABLE"),
     ]
 
     chunks = chunker.chunk(elements)
@@ -200,10 +194,8 @@ def test_edge_case_empty_title_and_orphaned_content(chunker: SemanticChunker) ->
     elements = [
         # Orphaned content at start (Should have no context prefix, or just own content)
         ParsedElement(text="Orphaned text.", type="NARRATIVE_TEXT"),
-
         # Empty Title (Should reset stack)
         ParsedElement(text="", type="TITLE"),
-
         # Header after empty title
         ParsedElement(text="Section 1", type="HEADER"),
         ParsedElement(text="Section content.", type="NARRATIVE_TEXT"),

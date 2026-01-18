@@ -12,8 +12,9 @@ from typing import List
 
 import pytest
 from coreason_refinery.parsing import DocumentParser, ParsedElement
-from tests.mocks import MockParser
 from pydantic import ValidationError
+
+from tests.mocks import MockParser
 
 
 def test_parsed_element_creation() -> None:

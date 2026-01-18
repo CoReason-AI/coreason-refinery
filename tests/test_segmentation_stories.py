@@ -100,6 +100,7 @@ def test_story_b_header_context_breadcrumbs() -> None:
     assert expected_context in target_chunk.text
     assert target_chunk.text.startswith(expected_context)
 
+
 def test_single_large_table_atomicity() -> None:
     """
     AUC-5: Verify single large table element atomicity.
