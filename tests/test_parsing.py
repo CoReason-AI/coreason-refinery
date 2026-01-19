@@ -35,7 +35,7 @@ def test_parsed_element_validation() -> None:
     """Test ParsedElement validation."""
     with pytest.raises(ValidationError):
         # Invalid type
-        ParsedElement(text="Test", type="INVALID_TYPE")
+        ParsedElement(text="Test", type="INVALID_TYPE")  # type: ignore[arg-type]
 
 
 def test_mock_parser_implementation() -> None:

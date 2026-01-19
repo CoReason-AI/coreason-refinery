@@ -26,7 +26,7 @@ from unstructured.documents.elements import (
 from unstructured.partition.pdf import partition_pdf
 
 
-class ParsedElement(BaseModel):  # type: ignore[misc]
+class ParsedElement(BaseModel):
     """Represents a single atomic element parsed from a source document.
 
     This is an intermediate representation before chunking and enrichment.
@@ -63,7 +63,9 @@ class UnstructuredPdfParser(DocumentParser):
 
     def _map_element(self, element: Element) -> ParsedElement:
         """Map unstructured element to ParsedElement."""
-        element_type = "UNCATEGORIZED"
+        element_type: Literal[
+            "TITLE", "NARRATIVE_TEXT", "TABLE", "LIST_ITEM", "HEADER", "FOOTER", "UNCATEGORIZED"
+        ] = "UNCATEGORIZED"
         if isinstance(element, Title):
             element_type = "TITLE"
         elif isinstance(element, Table):

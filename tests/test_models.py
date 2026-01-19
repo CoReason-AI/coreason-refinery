@@ -35,7 +35,7 @@ def test_ingestion_config_validation() -> None:
     """Test IngestionConfig validation."""
     with pytest.raises(ValidationError):
         # Invalid chunk_strategy
-        IngestionConfig(chunk_strategy="INVALID", segment_len=500)
+        IngestionConfig(chunk_strategy="INVALID", segment_len=500)  # type: ignore[arg-type]
 
 
 def test_ingestion_job_creation() -> None:
@@ -81,7 +81,7 @@ def test_ingestion_job_validation() -> None:
             id=job_id,
             source_file_path="/tmp/test.pdf",
             config=config,
-            status="INVALID",
+            status="INVALID",  # type: ignore[arg-type]
         )
 
 
