@@ -72,6 +72,10 @@ class SemanticChunker:
         # Default fallback
         return 1
 
+    def _clean_header_text(self, text: str) -> str:
+        """Strip leading Markdown hashes and whitespace for context usage."""
+        return re.sub(r"^\s*#+\s*", "", text).strip()
+
     def chunk(self, elements: List[ParsedElement]) -> List[RefinedChunk]:
         """Convert parsed elements into refined chunks with semantic context.
 
@@ -83,6 +87,7 @@ class SemanticChunker:
                 - Update `header_stack` based on depth.
             - On Content (Text, Table, List):
                 - Append to buffer.
+                - Check segment length limit (flush if full).
                 - Merge metadata (e.g. page numbers).
         """
         chunks: List[RefinedChunk] = []
@@ -150,7 +155,8 @@ class SemanticChunker:
                 # or sits at the very top.
                 flush_buffer()
                 # Depth 0. Wipe stack.
-                header_stack = [(0, element.text)]
+                clean_text = self._clean_header_text(element.text)
+                header_stack = [(0, clean_text)]
 
             elif element.type == "HEADER":
                 flush_buffer()
@@ -175,7 +181,8 @@ class SemanticChunker:
                     else:
                         break
 
-                header_stack.append((depth, element.text))
+                clean_text = self._clean_header_text(element.text)
+                header_stack.append((depth, clean_text))
 
             # -- Handle Content (Text, Table, List, etc.) --
             elif element.type in [
@@ -192,6 +199,28 @@ class SemanticChunker:
                 notes = element.metadata.get("speaker_notes")
                 if notes:
                     text_to_add = f"Speaker Notes: {notes}\n{text_to_add}"
+
+                # Calculate estimated size of current buffer
+                current_len = sum(len(s) for s in current_buffer)
+
+                # Check if adding this text exceeds segment_len
+                # However, we must NOT split TABLES mid-row.
+                # Strategy:
+                # 1. If buffer + new text > limit:
+                #    a. If new element is TABLE:
+                #       - IGNORE size limit. Append to buffer. (Preserves "Table spanning pages" merge).
+                #       - Note: If buffer already has massive Text, this creates a massive Chunk.
+                #       - Ideally, we'd flush Text first, but identifying "Table Chain" vs "Text then Table"
+                #         is tricky without lookahead.
+                #       - Given "Structure is Prerequisite", we err on the side of NOT splitting Tables.
+                #    b. If new element is NOT TABLE:
+                #       - Flush buffer. (Standard behavior).
+
+                is_table = element.type == "TABLE"
+                exceeds_limit = current_buffer and (current_len + len(text_to_add) > self.config.segment_len)
+
+                if exceeds_limit and not is_table:
+                    flush_buffer()
 
                 current_buffer.append(text_to_add)
 
