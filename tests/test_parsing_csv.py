@@ -87,3 +87,61 @@ def test_csv_parser_error(mock_read_csv: MagicMock) -> None:
         parser.parse("missing.csv")
 
     assert "Failed to parse Structured file (missing.csv)" in str(excinfo.value)
+
+
+def test_csv_parser_encoding_error(mock_read_csv: MagicMock) -> None:
+    """Test handling of UnicodeDecodeError (simulating encoding issues)."""
+    mock_read_csv.side_effect = UnicodeDecodeError("utf-8", b"", 0, 1, "invalid start byte")
+
+    parser = ExcelParser()
+    with pytest.raises(RuntimeError) as excinfo:
+        parser.parse("latin1.csv")
+
+    assert "Failed to parse Structured file (latin1.csv)" in str(excinfo.value)
+    assert "invalid start byte" in str(excinfo.value)
+
+
+def test_csv_parser_malformed(mock_read_csv: MagicMock) -> None:
+    """Test handling of pandas ParserError (malformed CSV)."""
+    mock_read_csv.side_effect = pd.errors.ParserError("Error tokenizing data")
+
+    parser = ExcelParser()
+    with pytest.raises(RuntimeError) as excinfo:
+        parser.parse("bad_format.csv")
+
+    assert "Failed to parse Structured file (bad_format.csv)" in str(excinfo.value)
+
+
+def test_csv_parser_empty_data_error(mock_read_csv: MagicMock) -> None:
+    """Test handling of pandas EmptyDataError."""
+    # EmptyDataError is raised by pandas when a file is empty or has no columns
+    mock_read_csv.side_effect = pd.errors.EmptyDataError("No columns to parse from file")
+
+    parser = ExcelParser()
+    with pytest.raises(RuntimeError) as excinfo:
+        parser.parse("no_columns.csv")
+
+    assert "Failed to parse Structured file (no_columns.csv)" in str(excinfo.value)
+
+
+def test_csv_newlines_in_quotes(mock_read_csv: MagicMock) -> None:
+    """Test that newlines within quoted fields are preserved in the Markdown table output."""
+    # Dataframe simulating:
+    # Col1,Col2
+    # "Line 1\nLine 2",Value
+    data = {"Col1": ["Line 1\nLine 2"], "Col2": ["Value"]}
+    df = pd.DataFrame(data)
+    mock_read_csv.return_value = df
+
+    parser = ExcelParser()
+    elements = parser.parse("complex.csv")
+
+    assert len(elements) == 2
+    table_text = elements[1].text
+
+    # Check that "Line 1" and "Line 2" both appear.
+    # Note: df.to_markdown() behavior on newlines depends on tablefmt.
+    # 'github' format usually keeps them as raw \n or converts to <br> depending on pandas version/tabulate.
+    # We verify the content is present.
+    assert "Line 1" in table_text
+    assert "Line 2" in table_text
