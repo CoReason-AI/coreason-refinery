@@ -1,3 +1,13 @@
+# Copyright (c) 2025 CoReason, Inc.
+#
+# This software is proprietary and dual-licensed.
+# Licensed under the Prosperity Public License 3.0 (the "License").
+# A copy of the license is available at https://prosperitylicense.com/versions/3.0.0
+# For details, see the LICENSE file.
+# Commercial use beyond a 30-day trial requires a separate license.
+#
+# Source Code: https://github.com/CoReason-AI/coreason_refinery
+
 from typing import Any, Dict, List, Literal
 from uuid import UUID
 
@@ -51,3 +61,18 @@ class IngestionJob(BaseModel):
     file_type: str = "auto"
     config: IngestionConfig
     status: Literal["PROCESSING", "COMPLETED", "FAILED"]
+
+
+class ParsedElement(BaseModel):
+    """
+    An atomic element parsed from a raw document.
+
+    Attributes:
+        type (Literal): The type of the element (e.g., 'TITLE', 'TABLE').
+        text (str): The raw text content of the element.
+        metadata (dict): Metadata associated with the element (page number, coordinates, etc.).
+    """
+
+    type: Literal["TITLE", "NARRATIVE_TEXT", "TABLE", "LIST_ITEM", "HEADER", "FOOTER", "UNCATEGORIZED"]
+    text: str
+    metadata: Dict[str, Any] = Field(default_factory=dict)
