@@ -63,9 +63,9 @@ class UnstructuredPdfParser(DocumentParser):
 
     def _map_element(self, element: Element) -> ParsedElement:
         """Map unstructured element to ParsedElement."""
-        element_type: Literal[
-            "TITLE", "NARRATIVE_TEXT", "TABLE", "LIST_ITEM", "HEADER", "FOOTER", "UNCATEGORIZED"
-        ] = "UNCATEGORIZED"
+        element_type: Literal["TITLE", "NARRATIVE_TEXT", "TABLE", "LIST_ITEM", "HEADER", "FOOTER", "UNCATEGORIZED"] = (
+            "UNCATEGORIZED"
+        )
         if isinstance(element, Title):
             element_type = "TITLE"
         elif isinstance(element, Table):
