@@ -14,6 +14,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pandas as pd
 import pytest
+
 from coreason_refinery.parsing import ExcelParser
 
 
@@ -193,4 +194,4 @@ def test_excel_parser_error(mock_read_excel: MagicMock) -> None:
     with pytest.raises(RuntimeError) as excinfo:
         parser.parse("bad.xlsx")
 
-    assert "Failed to parse Excel file" in str(excinfo.value)
+    assert "Failed to parse Structured file" in str(excinfo.value)
