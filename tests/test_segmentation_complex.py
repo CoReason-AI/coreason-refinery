@@ -51,27 +51,27 @@ def test_the_report_structure(chunker: SemanticChunker) -> None:
     assert len(chunks) == 6
 
     # 1. Executive Summary
-    assert chunks[0].metadata["header_hierarchy"] == ["Report Title", "# Executive Summary"]
+    assert chunks[0].metadata["header_hierarchy"] == ["Report Title", "Executive Summary"]
 
     # 2. Background (Should pop Exec Summary)
-    assert chunks[1].metadata["header_hierarchy"] == ["Report Title", "# Background"]
+    assert chunks[1].metadata["header_hierarchy"] == ["Report Title", "Background"]
 
     # 3. Problem (Should append to Background)
-    assert chunks[2].metadata["header_hierarchy"] == ["Report Title", "# Background", "## Problem"]
+    assert chunks[2].metadata["header_hierarchy"] == ["Report Title", "Background", "Problem"]
 
     # 4. Solution (Should pop Problem, keep Background)
-    assert chunks[3].metadata["header_hierarchy"] == ["Report Title", "# Background", "## Solution"]
+    assert chunks[3].metadata["header_hierarchy"] == ["Report Title", "Background", "Solution"]
 
     # 5. Details (Should append to Solution)
     assert chunks[4].metadata["header_hierarchy"] == [
         "Report Title",
-        "# Background",
-        "## Solution",
-        "### Details",
+        "Background",
+        "Solution",
+        "Details",
     ]
 
     # 6. Conclusion (Should pop Details, Solution, Background. Keep Title)
-    assert chunks[5].metadata["header_hierarchy"] == ["Report Title", "# Conclusion"]
+    assert chunks[5].metadata["header_hierarchy"] == ["Report Title", "Conclusion"]
 
 
 def test_empty_section_nightmare(chunker: SemanticChunker) -> None:
@@ -91,8 +91,8 @@ def test_empty_section_nightmare(chunker: SemanticChunker) -> None:
     # Note: Chapter 1 itself generates NO chunk because it has no content.
 
     assert len(chunks) == 1
-    assert chunks[0].metadata["header_hierarchy"] == ["Title", "# Chapter 1", "## Section 1.1"]
-    assert "Context: Title > # Chapter 1 > ## Section 1.1" in chunks[0].text
+    assert chunks[0].metadata["header_hierarchy"] == ["Title", "Chapter 1", "Section 1.1"]
+    assert "Context: Title > Chapter 1 > Section 1.1" in chunks[0].text
 
 
 def test_deeply_nested_list(chunker: SemanticChunker) -> None:
@@ -131,10 +131,10 @@ def test_table_broken_by_header(chunker: SemanticChunker) -> None:
     assert len(chunks) == 2
 
     assert "| Table Part 1 |" in chunks[0].text
-    assert "Context: # Section 1" in chunks[0].text
+    assert "Context: Section 1" in chunks[0].text
 
     assert "| Table Part 2 |" in chunks[1].text
-    assert "Context: # Section 2" in chunks[1].text
+    assert "Context: Section 2" in chunks[1].text
 
 
 def test_complex_mixed_attributes(chunker: SemanticChunker) -> None:

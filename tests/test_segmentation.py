@@ -216,8 +216,10 @@ def test_mixed_hierarchy(chunker: SemanticChunker) -> None:
     assert len(chunks) == 2
 
     # Chunk 0
-    assert chunks[0].metadata["header_hierarchy"] == ["# Root", "Section 1.1"]
+    # Cleaned header expectations:
+    assert chunks[0].metadata["header_hierarchy"] == ["Root", "Section 1.1"]
 
     # Chunk 1
     # ## Branch (Depth 2) should pop Section 1.1 (Depth 2) but keep # Root (Depth 1)
-    assert chunks[1].metadata["header_hierarchy"] == ["# Root", "## Branch"]
+    # Cleaned header expectations:
+    assert chunks[1].metadata["header_hierarchy"] == ["Root", "Branch"]

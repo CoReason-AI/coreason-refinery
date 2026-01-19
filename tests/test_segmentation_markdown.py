@@ -41,10 +41,11 @@ def test_markdown_header_depth(chunker: SemanticChunker) -> None:
     chunks = chunker.chunk(elements)
 
     assert len(chunks) == 4
-    assert chunks[0].metadata["header_hierarchy"] == ["# Title", "# Section 1"]
-    assert chunks[1].metadata["header_hierarchy"] == ["# Title", "# Section 1", "## Subsection 1.1"]
-    assert chunks[2].metadata["header_hierarchy"] == ["# Title", "# Section 1", "## Subsection 1.1", "### Detail 1.1.1"]
-    assert chunks[3].metadata["header_hierarchy"] == ["# Title", "# Section 2"]
+    # Note: Header cleaning removes leading # from the stored hierarchy strings
+    assert chunks[0].metadata["header_hierarchy"] == ["Title", "Section 1"]
+    assert chunks[1].metadata["header_hierarchy"] == ["Title", "Section 1", "Subsection 1.1"]
+    assert chunks[2].metadata["header_hierarchy"] == ["Title", "Section 1", "Subsection 1.1", "Detail 1.1.1"]
+    assert chunks[3].metadata["header_hierarchy"] == ["Title", "Section 2"]
 
 
 def test_markdown_edge_cases(chunker: SemanticChunker) -> None:
@@ -69,21 +70,21 @@ def test_markdown_edge_cases(chunker: SemanticChunker) -> None:
     assert len(chunks) == 4
 
     # Chunk 0: Root > Indented Header (Depth 2)
-    assert chunks[0].metadata["header_hierarchy"] == ["Root", "  ## Indented Header"]
+    assert chunks[0].metadata["header_hierarchy"] == ["Root", "Indented Header"]
 
     # Chunk 1: Root > Conflicting (Depth 1)
     # Depth 1 pops the previous Depth 2
-    assert chunks[1].metadata["header_hierarchy"] == ["Root", "# 1.1 Conflicting"]
+    assert chunks[1].metadata["header_hierarchy"] == ["Root", "1.1 Conflicting"]
 
     # Chunk 2: Root > Conflicting > Trailing (Depth 2)
-    assert chunks[2].metadata["header_hierarchy"] == ["Root", "# 1.1 Conflicting", "## Trailing ##"]
+    assert chunks[2].metadata["header_hierarchy"] == ["Root", "1.1 Conflicting", "Trailing ##"]
 
     # Chunk 3: Root > Conflicting > Trailing > Deep (Depth 6)
     assert chunks[3].metadata["header_hierarchy"] == [
         "Root",
-        "# 1.1 Conflicting",
-        "## Trailing ##",
-        "###### Deep",
+        "1.1 Conflicting",
+        "Trailing ##",
+        "Deep",
     ]
 
 
@@ -120,23 +121,23 @@ def test_complex_hierarchy_mix(chunker: SemanticChunker) -> None:
     assert chunks[0].metadata["header_hierarchy"] == ["Doc Root"]
 
     # Chunk 1: Content under "# Main Section"
-    assert chunks[1].metadata["header_hierarchy"] == ["Doc Root", "# Main Section"]
+    assert chunks[1].metadata["header_hierarchy"] == ["Doc Root", "Main Section"]
 
     # Chunk 2: Content under "1.1 Sub Section"
-    assert chunks[2].metadata["header_hierarchy"] == ["Doc Root", "# Main Section", "1.1 Sub Section"]
+    assert chunks[2].metadata["header_hierarchy"] == ["Doc Root", "Main Section", "1.1 Sub Section"]
 
     # Chunk 3: Content under "### Deep Detail"
     assert chunks[3].metadata["header_hierarchy"] == [
         "Doc Root",
-        "# Main Section",
+        "Main Section",
         "1.1 Sub Section",
-        "### Deep Detail",
+        "Deep Detail",
     ]
 
     # Chunk 4: Content under "1.2 Another Sub"
     # "1.2" (Depth 2) pops "###" (Depth 3)
-    assert chunks[4].metadata["header_hierarchy"] == ["Doc Root", "# Main Section", "1.2 Another Sub"]
+    assert chunks[4].metadata["header_hierarchy"] == ["Doc Root", "Main Section", "1.2 Another Sub"]
 
     # Chunk 5: Content under "# Conclusion"
     # "# Conclusion" (Depth 1) pops "1.2" (Depth 2) and "# Main Section" (Depth 1)
-    assert chunks[5].metadata["header_hierarchy"] == ["Doc Root", "# Conclusion"]
+    assert chunks[5].metadata["header_hierarchy"] == ["Doc Root", "Conclusion"]

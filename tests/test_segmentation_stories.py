@@ -65,8 +65,8 @@ def test_story_a_table_rescue_large_table() -> None:
     assert row_part_2 in table_chunk.text
     assert row_part_3 in table_chunk.text
 
-    # Verify Context (Story B check implicitly)
-    assert "Context: # Protocol 999 > ## Section 4: Toxicity" in table_chunk.text
+    # Verify Context (Story B check implicitly) - Cleaned Headers!
+    assert "Context: Protocol 999 > Section 4: Toxicity" in table_chunk.text
 
     # Verify Metadata Aggregation (Page numbers)
     assert "page_numbers" in table_chunk.metadata
@@ -134,3 +134,30 @@ def test_single_large_table_atomicity() -> None:
     assert large_table_text in chunk.text
     # Verify length is > segment_len (plus context overhead)
     assert len(chunk.text) > segment_len
+
+
+def test_segmentation_enforces_length_on_narrative() -> None:
+    """
+    Verify that the chunker respects segment_len by splitting a sequence of elements
+    that exceeds the length limit.
+    """
+    config = IngestionConfig(chunk_strategy="HEADER", segment_len=100)
+    chunker = SemanticChunker(config)
+
+    # Create multiple small narrative elements that sum up to > segment_len
+    # "word " is 5 chars. 25 words = 125 chars > 100.
+    small_text = "word " * 5  # 25 chars
+
+    elements = [
+        ParsedElement(text="# Section 1", type="HEADER", metadata={"section_depth": 1}),
+    ]
+    # Add 10 small paragraphs. Total ~250 chars. Should result in ~2-3 chunks.
+    for _ in range(10):
+        elements.append(ParsedElement(text=small_text, type="NARRATIVE_TEXT", metadata={}))
+
+    chunks = chunker.chunk(elements)
+
+    # Expectation:
+    # Logic should flush buffer when it gets full.
+    # We should have more than 1 chunk (Section 1 context).
+    assert len(chunks) > 1, f"Expected > 1 chunk for aggregated text > {config.segment_len}, got {len(chunks)}."

@@ -33,11 +33,11 @@ def test_skipping_levels(chunker: SemanticChunker) -> None:
     assert len(chunks) == 2
 
     # Chunk 1
-    assert chunks[0].metadata["header_hierarchy"] == ["# H1"]
+    assert chunks[0].metadata["header_hierarchy"] == ["H1"]
 
     # Chunk 2
     # H3 should simply push onto H1
-    assert chunks[1].metadata["header_hierarchy"] == ["# H1", "### H3"]
+    assert chunks[1].metadata["header_hierarchy"] == ["H1", "H3"]
 
 
 def test_backtracking_levels(chunker: SemanticChunker) -> None:
@@ -56,7 +56,7 @@ def test_backtracking_levels(chunker: SemanticChunker) -> None:
 
     # Chunk 3 (H2)
     # H2 (Depth 2) should pop H3 (Depth 3) but keep H1 (Depth 1)
-    assert chunks[2].metadata["header_hierarchy"] == ["# H1", "## H2"]
+    assert chunks[2].metadata["header_hierarchy"] == ["H1", "H2"]
 
 
 def test_header_no_content_then_shallower(chunker: SemanticChunker) -> None:
@@ -77,8 +77,8 @@ def test_header_no_content_then_shallower(chunker: SemanticChunker) -> None:
 
     assert len(chunks) == 2
 
-    assert chunks[0].metadata["header_hierarchy"] == ["# H1 A"]
-    assert chunks[1].metadata["header_hierarchy"] == ["# H1 B"]
+    assert chunks[0].metadata["header_hierarchy"] == ["H1 A"]
+    assert chunks[1].metadata["header_hierarchy"] == ["H1 B"]
 
 
 def test_duplicate_headers_same_level(chunker: SemanticChunker) -> None:
@@ -94,4 +94,4 @@ def test_duplicate_headers_same_level(chunker: SemanticChunker) -> None:
     assert len(chunks) == 2
 
     # H1 B should pop H1 A
-    assert chunks[1].metadata["header_hierarchy"] == ["# H1 B"]
+    assert chunks[1].metadata["header_hierarchy"] == ["H1 B"]
