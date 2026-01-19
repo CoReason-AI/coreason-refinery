@@ -9,6 +9,7 @@
 # Source Code: https://github.com/CoReason-AI/coreason_refinery
 
 import math
+import os
 from abc import ABC, abstractmethod
 from typing import Any, List, Literal
 
@@ -25,7 +26,7 @@ from unstructured.documents.elements import (
 from unstructured.partition.pdf import partition_pdf
 
 
-class ParsedElement(BaseModel):
+class ParsedElement(BaseModel):  # type: ignore[misc]
     """Represents a single atomic element parsed from a source document.
 
     This is an intermediate representation before chunking and enrichment.
@@ -85,18 +86,18 @@ class UnstructuredPdfParser(DocumentParser):
 
         return ParsedElement(
             text=str(element),
-            type=element_type,  # type: ignore[arg-type]
+            type=element_type,
             metadata=metadata,
         )
 
 
 class ExcelParser(DocumentParser):
-    """Parses Excel files into Markdown tables using pandas."""
+    """Parses Excel AND CSV files into Markdown tables using pandas."""
 
     ROW_LIMIT = 50
 
     def parse(self, file_path: str) -> List[ParsedElement]:
-        """Parse an Excel file.
+        """Parse an Excel or CSV file.
 
         Strategy:
             - Load file.
@@ -106,13 +107,24 @@ class ExcelParser(DocumentParser):
             - Sheet names become Headers.
         """
         # Read all sheets
+        sheets = {}
         try:
-            # None reads all sheets as a dict of {sheet_name: df}
-            sheets = pd.read_excel(file_path, sheet_name=None)
+            _, ext = os.path.splitext(file_path)
+            ext = ext.lower()
+
+            if ext == ".csv":
+                # Handle CSV specifically using read_csv
+                df = pd.read_csv(file_path)
+                # Wrap in a dictionary to mimic the multi-sheet structure of read_excel
+                sheets = {"CSV_Data": df}
+            else:
+                # Handle standard Excel formats (xls, xlsx, etc.)
+                # None reads all sheets as a dict of {sheet_name: df}
+                sheets = pd.read_excel(file_path, sheet_name=None)
         except Exception as e:
             # Handle empty or invalid files gracefully, or re-raise
             # For now, let's assume valid file or allow bubbling up
-            raise RuntimeError(f"Failed to parse Excel file: {e}") from e
+            raise RuntimeError(f"Failed to parse Structured file ({file_path}): {e}") from e
 
         elements: List[ParsedElement] = []
 

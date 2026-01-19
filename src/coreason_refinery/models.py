@@ -14,14 +14,14 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 
-class IngestionConfig(BaseModel):
+class IngestionConfig(BaseModel):  # type: ignore[misc]
     """Configuration for the ingestion process."""
 
     chunk_strategy: Literal["HEADER", "SIZE"] = "HEADER"
     segment_len: int = 500
 
 
-class IngestionJob(BaseModel):
+class IngestionJob(BaseModel):  # type: ignore[misc]
     """Represents an ingestion job for a file."""
 
     id: UUID
@@ -31,7 +31,7 @@ class IngestionJob(BaseModel):
     status: Literal["PROCESSING", "COMPLETED", "FAILED"]
 
 
-class RefinedChunk(BaseModel):
+class RefinedChunk(BaseModel):  # type: ignore[misc]
     """Represents a chunk of refined data ready for vector storage."""
 
     id: str  # Unique Vector ID
