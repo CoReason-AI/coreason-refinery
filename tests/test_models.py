@@ -12,8 +12,9 @@ import uuid
 from typing import Any, Dict
 
 import pytest
-from coreason_refinery.models import IngestionConfig, IngestionJob, RefinedChunk
 from pydantic import ValidationError
+
+from coreason_refinery.models import IngestionConfig, IngestionJob, RefinedChunk
 
 
 def test_ingestion_config_defaults() -> None:
@@ -41,12 +42,32 @@ def test_ingestion_job_creation() -> None:
     """Test creating a valid IngestionJob."""
     job_id = uuid.uuid4()
     config = IngestionConfig()
-    job = IngestionJob(id=job_id, source_file_path="/tmp/test.pdf", config=config, status="PROCESSING")
+    job = IngestionJob(
+        id=job_id,
+        source_file_path="/tmp/test.pdf",
+        file_type="pdf",
+        config=config,
+        status="PROCESSING",
+    )
 
     assert job.id == job_id
     assert job.source_file_path == "/tmp/test.pdf"
+    assert job.file_type == "pdf"
     assert job.config == config
     assert job.status == "PROCESSING"
+
+
+def test_ingestion_job_default_file_type() -> None:
+    """Test default file type assignment."""
+    job_id = uuid.uuid4()
+    config = IngestionConfig()
+    job = IngestionJob(
+        id=job_id,
+        source_file_path="/tmp/test.unknown",
+        config=config,
+        status="PROCESSING",
+    )
+    assert job.file_type == "auto"
 
 
 def test_ingestion_job_validation() -> None:

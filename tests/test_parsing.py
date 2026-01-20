@@ -11,8 +11,10 @@
 from typing import List
 
 import pytest
-from coreason_refinery.parsing import DocumentParser, MockParser, ParsedElement
 from pydantic import ValidationError
+
+from coreason_refinery.parsing import DocumentParser, ParsedElement
+from tests.mocks import MockParser
 
 
 def test_parsed_element_creation() -> None:
