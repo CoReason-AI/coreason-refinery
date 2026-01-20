@@ -20,6 +20,11 @@ from coreason_refinery.pipeline import RefineryPipelineAsync
 
 
 @pytest.fixture
+def anyio_backend() -> str:
+    return "asyncio"
+
+
+@pytest.fixture
 def sample_job() -> IngestionJob:
     return IngestionJob(
         id=uuid.uuid4(),
@@ -37,7 +42,7 @@ def mock_elements() -> List[ParsedElement]:
     ]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_pipeline_async_process(sample_job: IngestionJob, mock_elements: List[ParsedElement]) -> None:
     """Test the async process method."""
     with (
@@ -62,7 +67,7 @@ async def test_pipeline_async_process(sample_job: IngestionJob, mock_elements: L
             mock_chunker.chunk.assert_called_once_with(mock_elements)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_resource_cleanup() -> None:
     """Test that the internal client is closed on exit."""
     # We mock httpx.AsyncClient to verify aclose is called
@@ -78,7 +83,7 @@ async def test_resource_cleanup() -> None:
         mock_client_instance.aclose.assert_called_once()
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_external_client_lifecycle() -> None:
     """Test that an external client is NOT closed."""
     mock_external_client = AsyncMock()
