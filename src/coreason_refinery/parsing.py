@@ -1,0 +1,225 @@
+# Copyright (c) 2025 CoReason, Inc.
+#
+# This software is proprietary and dual-licensed.
+# Licensed under the Prosperity Public License 3.0 (the "License").
+# A copy of the license is available at https://prosperitylicense.com/versions/3.0.0
+# For details, see the LICENSE file.
+# Commercial use beyond a 30-day trial requires a separate license.
+#
+# Source Code: https://github.com/CoReason-AI/coreason_refinery
+
+import math
+import os
+from abc import ABC, abstractmethod
+from typing import Any, List, Literal
+
+import pandas as pd
+from pydantic import BaseModel, Field
+from unstructured.documents.elements import (
+    Element,
+    Footer,
+    Header,
+    ListItem,
+    Table,
+    Title,
+)
+from unstructured.partition.pdf import partition_pdf
+
+
+class ParsedElement(BaseModel):
+    """Represents a single atomic element parsed from a source document.
+
+    This is an intermediate representation before chunking and enrichment.
+    It maps various input formats (PDF elements, Excel rows) to a unified
+    structure suitable for semantic processing.
+
+    Attributes:
+        text: The text content of the element.
+        type: The semantic type of the element (e.g., TITLE, TABLE).
+        metadata: Raw metadata associated with the element (e.g., page number).
+    """
+
+    text: str
+    type: Literal["TITLE", "NARRATIVE_TEXT", "TABLE", "LIST_ITEM", "HEADER", "FOOTER", "UNCATEGORIZED"]
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class DocumentParser(ABC):
+    """Abstract base class for the Multi-Modal Parser (The Cracker).
+
+    Responsibilities:
+        - Route extraction to the best engine for the file type.
+        - Ensure output is a list of standardized ParsedElements.
+    """
+
+    @abstractmethod
+    def parse(self, file_path: str) -> List[ParsedElement]:
+        """Parse a file into a list of semantic elements.
+
+        Args:
+            file_path: The path to the file to parse.
+
+        Returns:
+            A list of ParsedElement objects preserving document order.
+
+        Raises:
+            RuntimeError: If parsing fails (e.g. file not found, corrupt).
+        """
+        pass  # pragma: no cover
+
+
+class UnstructuredPdfParser(DocumentParser):
+    """PDF parser using the unstructured library.
+
+    Implements the 'PDF Pipeline' from the PRD.
+    Prioritizes layout analysis to preserve table grids and structure.
+    """
+
+    def parse(self, file_path: str) -> List[ParsedElement]:
+        """Parse a PDF file using unstructured.
+
+        Args:
+            file_path: Path to the PDF file.
+
+        Returns:
+            List of ParsedElement objects.
+        """
+        # Note: In a full production setup, this would integrate 'marker-pdf'
+        # as the primary engine per PRD 3.1, with unstructured as fallback.
+        # Currently uses unstructured directly.
+        elements = partition_pdf(filename=file_path)
+        return [self._map_element(e) for e in elements]
+
+    def _map_element(self, element: Element) -> ParsedElement:
+        """Map unstructured element to ParsedElement.
+
+        Args:
+            element: An element from the unstructured library.
+
+        Returns:
+            A standardized ParsedElement.
+        """
+        element_type: Literal["TITLE", "NARRATIVE_TEXT", "TABLE", "LIST_ITEM", "HEADER", "FOOTER", "UNCATEGORIZED"] = (
+            "UNCATEGORIZED"
+        )
+        if isinstance(element, Title):
+            element_type = "TITLE"
+        elif isinstance(element, Table):
+            element_type = "TABLE"
+        elif isinstance(element, ListItem):
+            element_type = "LIST_ITEM"
+        elif isinstance(element, Header):
+            element_type = "HEADER"
+        elif isinstance(element, Footer):
+            element_type = "FOOTER"
+        elif type(element).__name__ == "NarrativeText" or type(element).__name__ == "Text":
+            element_type = "NARRATIVE_TEXT"
+
+        # Extract metadata
+        metadata = element.metadata.to_dict() if element.metadata else {}
+
+        # Flatten helpful metadata fields to top level of our metadata dict
+        if "page_number" in metadata:
+            metadata["page_number"] = metadata["page_number"]
+
+        return ParsedElement(
+            text=str(element),
+            type=element_type,
+            metadata=metadata,
+        )
+
+
+class ExcelParser(DocumentParser):
+    """Parses Excel AND CSV files into Markdown tables using pandas.
+
+    Implements the 'Spreadsheet Pipeline' from the PRD.
+    Treats sheets as Relational Data and converts them to Markdown Tables.
+    Handles large files by chunking row groups.
+    """
+
+    ROW_LIMIT = 50
+
+    def parse(self, file_path: str) -> List[ParsedElement]:
+        """Parse an Excel or CSV file.
+
+        Args:
+            file_path: Path to the .xlsx or .csv file.
+
+        Returns:
+            List of ParsedElement objects (Headers for sheets, Tables for data).
+
+        Raises:
+            RuntimeError: If file reading fails.
+        """
+        # Read all sheets
+        sheets = {}
+        try:
+            _, ext = os.path.splitext(file_path)
+            ext = ext.lower()
+
+            if ext == ".csv":
+                # Handle CSV specifically using read_csv
+                df = pd.read_csv(file_path)
+                # Wrap in a dictionary to mimic the multi-sheet structure of read_excel
+                sheets = {"CSV_Data": df}
+            else:
+                # Handle standard Excel formats (xls, xlsx, etc.)
+                # None reads all sheets as a dict of {sheet_name: df}
+                sheets = pd.read_excel(file_path, sheet_name=None)
+        except Exception as e:
+            # Handle empty or invalid files gracefully, or re-raise
+            raise RuntimeError(f"Failed to parse Structured file ({file_path}): {e}") from e
+
+        elements: List[ParsedElement] = []
+
+        for sheet_name, df in sheets.items():
+            # Add Sheet Name as a Header
+            elements.append(
+                ParsedElement(
+                    text=f"Sheet: {sheet_name}",
+                    type="HEADER",
+                    metadata={"sheet_name": sheet_name, "section_depth": 2},
+                )
+            )
+
+            if df.empty:
+                elements.append(
+                    ParsedElement(
+                        text="(Empty Sheet)",
+                        type="NARRATIVE_TEXT",
+                        metadata={"sheet_name": sheet_name},
+                    )
+                )
+                continue
+
+            # Calculate chunks
+            total_rows = len(df)
+            num_chunks = math.ceil(total_rows / self.ROW_LIMIT)
+
+            for i in range(num_chunks):
+                start_idx = i * self.ROW_LIMIT
+                end_idx = start_idx + self.ROW_LIMIT
+
+                # Slice the dataframe
+                chunk_df = df.iloc[start_idx:end_idx]
+
+                # Convert to markdown
+                # index=False usually cleaner for data tables unless index is meaningful
+                md_table = chunk_df.to_markdown(index=False, tablefmt="github")
+
+                if md_table:
+                    elements.append(
+                        ParsedElement(
+                            text=md_table,
+                            type="TABLE",
+                            metadata={
+                                "sheet_name": sheet_name,
+                                "chunk_index": i,
+                                "total_chunks": num_chunks,
+                                "row_start": start_idx,
+                                "row_end": min(end_idx, total_rows),
+                            },
+                        )
+                    )
+
+        return elements

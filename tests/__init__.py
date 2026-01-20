@@ -7,15 +7,3 @@
 # Commercial use beyond a 30-day trial requires a separate license.
 #
 # Source Code: https://github.com/CoReason-AI/coreason_refinery
-
-from coreason_refinery.utils.logger import logger
-
-
-def hello_world() -> str:
-    """Return a hello world string and log it.
-
-    Returns:
-        The string "Hello World!".
-    """
-    logger.info("Hello World!")
-    return "Hello World!"

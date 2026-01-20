@@ -1,0 +1,10 @@
+loguru>=0.7.2
+pydantic>=2.12.5
+unstructured>=0.18.27
+pandas>=2.3.3
+openpyxl>=3.1.5
+tabulate>=0.9.0
+pdfminer.six>=20231228
+unstructured-inference>=0.7.36
+pdf2image>=1.17.0
+pi-heif>=0.16.0
