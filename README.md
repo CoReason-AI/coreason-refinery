@@ -1,8 +1,9 @@
 # coreason-refinery
 
-![License: Prosperity 3.0](https://img.shields.io/badge/License-Prosperity%203.0-blue?style=flat&label=License&color=blue)
+![License: Prosperity 3.0](https://img.shields.io/badge/license-Prosperity%203.0-blue)
 ![Build Status](https://github.com/CoReason-AI/coreason_refinery/actions/workflows/ci.yml/badge.svg)
 ![Code Style: Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)
+![Documentation](https://img.shields.io/badge/docs-product_requirements.md-blue)
 
 **coreason-refinery** is the industrial processing plant for data ingestion at CoReason-AI. It transforms raw documents (PDF, Excel, PPTX) into semantically structured, machine-readable Markdown, ready for RAG (Retrieval-Augmented Generation) pipelines.
 

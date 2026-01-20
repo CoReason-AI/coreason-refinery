@@ -57,7 +57,7 @@ class RefinedChunk(BaseModel):
     Attributes:
         id: Unique Vector ID for this chunk.
         text: The Cleaned Content, formatted as Markdown.
-              Contains context-enriched text (e.g. including headers).
+            Contains context-enriched text (e.g. including headers).
         vector: The embedding vector for the text (deferred generation).
         metadata: Enriched metadata for the chunk.
             Includes:
