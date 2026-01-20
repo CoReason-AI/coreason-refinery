@@ -19,13 +19,21 @@ from coreason_refinery.parsing import ParsedElement
 class SemanticChunker:
     """Chunks parsed elements based on semantic structure (headers/sections).
 
-    Implements the 'Semantic Segmenter' (The Cutter) logic:
-    1. Header-Based Splitting: Splits on Markdown headers (#, ##).
-    2. Table Preservation: Merges tables spanning pages/elements.
-    3. Rolling Context: Prepends header hierarchy (Breadcrumbs).
+    Implements the 'Semantic Segmenter' (The Cutter) logic from the PRD.
+    It splits primarily by document logic (Headers) rather than arbitrary
+    character counts, while ensuring context injection ("Breadcrumbs") and
+    atomic unit preservation (Tables).
+
+    Attributes:
+        config: IngestionConfig containing strategy and length preferences.
     """
 
     def __init__(self, config: IngestionConfig):
+        """Initialize the SemanticChunker.
+
+        Args:
+            config: Configuration for chunking behavior.
+        """
         self.config = config
 
     def _infer_depth(self, text: str) -> int:
@@ -35,7 +43,13 @@ class SemanticChunker:
         1. Markdown syntax (e.g., '##' -> 2).
         2. Labeled sections (e.g., 'Section 1.2' -> 2).
         3. Plain numbering (e.g., '1.2' -> 2).
-        4. Default to 1 if no pattern matches (though typically HEADER implies some structure).
+        4. Fallback to 1.
+
+        Args:
+            text: The header text to analyze.
+
+        Returns:
+            Estimated depth integer (1 being top-level under Title).
         """
         # 1. Markdown headers
         # Matches one or more '#' at the start, potentially after whitespace
@@ -73,22 +87,29 @@ class SemanticChunker:
         return 1
 
     def _clean_header_text(self, text: str) -> str:
-        """Strip leading Markdown hashes and whitespace for context usage."""
+        """Strip leading Markdown hashes and whitespace for context usage.
+
+        Args:
+            text: Raw header text.
+
+        Returns:
+            Cleaned header text for breadcrumb generation.
+        """
         return re.sub(r"^\s*#+\s*", "", text).strip()
 
     def chunk(self, elements: List[ParsedElement]) -> List[RefinedChunk]:
         """Convert parsed elements into refined chunks with semantic context.
 
-        Logic:
-            - Iterate through elements.
-            - Maintain `header_stack`: list of (depth, text).
-            - On HEADER/TITLE:
-                - Flush current buffer to a RefinedChunk.
-                - Update `header_stack` based on depth.
-            - On Content (Text, Table, List):
-                - Append to buffer.
-                - Check segment length limit (flush if full).
-                - Merge metadata (e.g. page numbers).
+        Implements:
+        - Header-Based Splitting.
+        - Table Preservation (merges tables spanning pages).
+        - Rolling Context (Context Injection).
+
+        Args:
+            elements: List of ParsedElement objects from the parser.
+
+        Returns:
+            List of RefinedChunk objects with metadata and context.
         """
         chunks: List[RefinedChunk] = []
 

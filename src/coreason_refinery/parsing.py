@@ -30,6 +30,13 @@ class ParsedElement(BaseModel):
     """Represents a single atomic element parsed from a source document.
 
     This is an intermediate representation before chunking and enrichment.
+    It maps various input formats (PDF elements, Excel rows) to a unified
+    structure suitable for semantic processing.
+
+    Attributes:
+        text: The text content of the element.
+        type: The semantic type of the element (e.g., TITLE, TABLE).
+        metadata: Raw metadata associated with the element (e.g., page number).
     """
 
     text: str
@@ -38,7 +45,12 @@ class ParsedElement(BaseModel):
 
 
 class DocumentParser(ABC):
-    """Abstract base class for document parsers."""
+    """Abstract base class for the Multi-Modal Parser (The Cracker).
+
+    Responsibilities:
+        - Route extraction to the best engine for the file type.
+        - Ensure output is a list of standardized ParsedElements.
+    """
 
     @abstractmethod
     def parse(self, file_path: str) -> List[ParsedElement]:
@@ -49,20 +61,44 @@ class DocumentParser(ABC):
 
         Returns:
             A list of ParsedElement objects preserving document order.
+
+        Raises:
+            RuntimeError: If parsing fails (e.g. file not found, corrupt).
         """
         pass  # pragma: no cover
 
 
 class UnstructuredPdfParser(DocumentParser):
-    """PDF parser using the unstructured library."""
+    """PDF parser using the unstructured library.
+
+    Implements the 'PDF Pipeline' from the PRD.
+    Prioritizes layout analysis to preserve table grids and structure.
+    """
 
     def parse(self, file_path: str) -> List[ParsedElement]:
-        """Parse a PDF file using unstructured."""
+        """Parse a PDF file using unstructured.
+
+        Args:
+            file_path: Path to the PDF file.
+
+        Returns:
+            List of ParsedElement objects.
+        """
+        # Note: In a full production setup, this would integrate 'marker-pdf'
+        # as the primary engine per PRD 3.1, with unstructured as fallback.
+        # Currently uses unstructured directly.
         elements = partition_pdf(filename=file_path)
         return [self._map_element(e) for e in elements]
 
     def _map_element(self, element: Element) -> ParsedElement:
-        """Map unstructured element to ParsedElement."""
+        """Map unstructured element to ParsedElement.
+
+        Args:
+            element: An element from the unstructured library.
+
+        Returns:
+            A standardized ParsedElement.
+        """
         element_type: Literal["TITLE", "NARRATIVE_TEXT", "TABLE", "LIST_ITEM", "HEADER", "FOOTER", "UNCATEGORIZED"] = (
             "UNCATEGORIZED"
         )
@@ -94,19 +130,26 @@ class UnstructuredPdfParser(DocumentParser):
 
 
 class ExcelParser(DocumentParser):
-    """Parses Excel AND CSV files into Markdown tables using pandas."""
+    """Parses Excel AND CSV files into Markdown tables using pandas.
+
+    Implements the 'Spreadsheet Pipeline' from the PRD.
+    Treats sheets as Relational Data and converts them to Markdown Tables.
+    Handles large files by chunking row groups.
+    """
 
     ROW_LIMIT = 50
 
     def parse(self, file_path: str) -> List[ParsedElement]:
         """Parse an Excel or CSV file.
 
-        Strategy:
-            - Load file.
-            - Iterate sheets.
-            - If sheet rows > ROW_LIMIT, split into chunks.
-            - Convert chunks to Markdown tables.
-            - Sheet names become Headers.
+        Args:
+            file_path: Path to the .xlsx or .csv file.
+
+        Returns:
+            List of ParsedElement objects (Headers for sheets, Tables for data).
+
+        Raises:
+            RuntimeError: If file reading fails.
         """
         # Read all sheets
         sheets = {}
@@ -125,7 +168,6 @@ class ExcelParser(DocumentParser):
                 sheets = pd.read_excel(file_path, sheet_name=None)
         except Exception as e:
             # Handle empty or invalid files gracefully, or re-raise
-            # For now, let's assume valid file or allow bubbling up
             raise RuntimeError(f"Failed to parse Structured file ({file_path}): {e}") from e
 
         elements: List[ParsedElement] = []
