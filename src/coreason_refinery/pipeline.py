@@ -9,7 +9,10 @@
 # Source Code: https://github.com/CoReason-AI/coreason_refinery
 
 import os
-from typing import List
+from typing import Any, List, Optional
+
+import anyio
+import httpx
 
 from coreason_refinery.models import IngestionJob, RefinedChunk
 from coreason_refinery.parsing import (
@@ -21,19 +24,41 @@ from coreason_refinery.segmentation import SemanticChunker
 from coreason_refinery.utils.logger import logger
 
 
-class RefineryPipeline:
-    """Orchestrates the ingestion process: Parsing -> Chunking -> Enrichment.
+class RefineryPipelineAsync:
+    """Async Core of the Ingestion Pipeline.
 
-    This is the "Industrial Processing Plant" logic.
+    Handles all logic with strict lifecycle management.
     """
 
-    def process(self, job: IngestionJob) -> List[RefinedChunk]:
-        """Process an ingestion job.
+    def __init__(self, client: Optional[httpx.AsyncClient] = None) -> None:
+        """Initialize the pipeline with an optional HTTP client.
+
+        Args:
+            client: Optional httpx.AsyncClient for connection pooling.
+        """
+        self._internal_client = client is None
+        self._client = client or httpx.AsyncClient()
+
+    async def __aenter__(self) -> "RefineryPipelineAsync":
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: Optional[type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[Any],
+    ) -> None:
+        if self._internal_client:
+            await self._client.aclose()
+        # Close other resources if any
+
+    async def process(self, job: IngestionJob) -> List[RefinedChunk]:
+        """Process an ingestion job asynchronously.
 
         Executes the Vision-Structure-Enrich-Vectorize Loop (partially).
         1. Selects Parser (Multi-Modal Parser).
-        2. Parses Document into atomic elements.
-        3. Chunks Elements (Semantic Segmenter) into RefinedChunks.
+        2. Parses Document into atomic elements (offloaded to thread).
+        3. Chunks Elements (Semantic Segmenter) into RefinedChunks (offloaded to thread).
 
         Args:
             job: The ingestion job configuration.
@@ -53,22 +78,22 @@ class RefineryPipeline:
 
             # 2. Parse Document
             logger.debug(f"Parsing file using {type(parser).__name__}")
-            elements = parser.parse(job.source_file_path)
+            # Offload blocking I/O and CPU bound parsing to a worker thread
+            elements = await anyio.to_thread.run_sync(parser.parse, job.source_file_path)
             logger.info(f"Parsed {len(elements)} elements")
 
             # 3. Chunk Elements
             chunker = SemanticChunker(job.config)
             logger.debug("Chunking elements")
-            chunks = chunker.chunk(elements)
+            # Offload CPU bound chunking to a worker thread
+            chunks = await anyio.to_thread.run_sync(chunker.chunk, elements)
             logger.info(f"Generated {len(chunks)} chunks")
 
             # 4. Enrichment (Placeholder for future atomic unit)
-            # chunks = self._enrich(chunks)
+            # chunks = await self._enrich(chunks)
 
-            # Update job status (conceptually - though job object is passed by value here usually)
-            # In a real system, we'd update a DB. Here we just return the chunks.
-
-            return chunks
+            # Cast to ensure mypy knows this is a list of RefinedChunk
+            return chunks  # type: ignore[no-any-return]
 
         except Exception as e:
             logger.exception(f"Processing failed for job {job.id}")
@@ -110,3 +135,37 @@ class RefineryPipeline:
         #     return PptxParser()
         else:
             raise ValueError(f"Unsupported file type: {job.file_type}")
+
+
+class RefineryPipeline:
+    """Sync Facade for RefineryPipelineAsync.
+
+    Orchestrates the ingestion process: Parsing -> Chunking -> Enrichment.
+    Wraps the Async Core using anyio.run.
+    """
+
+    def __init__(self, client: Optional[httpx.AsyncClient] = None) -> None:
+        self._async = RefineryPipelineAsync(client=client)
+
+    def __enter__(self) -> "RefineryPipeline":
+        return self
+
+    def __exit__(
+        self,
+        exc_type: Optional[type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[Any],
+    ) -> None:
+        anyio.run(self._async.__aexit__, exc_type, exc_val, exc_tb)
+
+    def process(self, job: IngestionJob) -> List[RefinedChunk]:
+        """Process an ingestion job synchronously.
+
+        Args:
+            job: The ingestion job configuration.
+
+        Returns:
+            A list of RefinedChunk objects.
+        """
+        # anyio.run is generic, cast return value
+        return anyio.run(self._async.process, job)  # type: ignore[no-any-return]
