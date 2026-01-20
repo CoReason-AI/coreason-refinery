@@ -16,6 +16,6 @@ __version__ = "0.1.0"
 __author__ = "Gowtham A Rao"
 __email__ = "gowtham.rao@coreason.ai"
 
-from .main import hello_world
+from coreason_refinery.pipeline import RefineryPipeline, RefineryPipelineAsync
 
-__all__ = ["hello_world"]
+__all__ = ["RefineryPipeline", "RefineryPipelineAsync"]
