@@ -303,3 +303,12 @@ def test_complex_data_flow(pipeline: RefineryPipeline) -> None:
         assert len(result) == 1
         assert result[0].id == "c1"
         assert result[0].metadata["header_hierarchy"] == ["H1"]
+
+
+def test_pipeline_sync_context_manager() -> None:
+    """Test that the Sync Facade works as a context manager.
+
+    Verifies that it can be used in a `with` statement.
+    """
+    with RefineryPipeline() as pipeline:
+        assert isinstance(pipeline, RefineryPipeline)
