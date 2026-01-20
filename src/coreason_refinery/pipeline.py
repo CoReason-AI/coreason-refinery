@@ -22,10 +22,18 @@ from coreason_refinery.utils.logger import logger
 
 
 class RefineryPipeline:
-    """Orchestrates the ingestion process: Parsing -> Chunking -> Enrichment."""
+    """Orchestrates the ingestion process: Parsing -> Chunking -> Enrichment.
+
+    This is the "Industrial Processing Plant" logic.
+    """
 
     def process(self, job: IngestionJob) -> List[RefinedChunk]:
         """Process an ingestion job.
+
+        Executes the Vision-Structure-Enrich-Vectorize Loop (partially).
+        1. Selects Parser (Multi-Modal Parser).
+        2. Parses Document into atomic elements.
+        3. Chunks Elements (Semantic Segmenter) into RefinedChunks.
 
         Args:
             job: The ingestion job configuration.
@@ -67,7 +75,19 @@ class RefineryPipeline:
             raise RuntimeError(f"Pipeline processing failed: {e}") from e
 
     def _get_parser(self, job: IngestionJob) -> DocumentParser:
-        """Select the appropriate parser based on file type."""
+        """Select the appropriate parser based on file type.
+
+        Acts as the routing engine ('The Cracker').
+
+        Args:
+            job: The ingestion job containing file info.
+
+        Returns:
+            An instance of a DocumentParser subclass.
+
+        Raises:
+            ValueError: If file type is unsupported.
+        """
         file_type = job.file_type.lower()
 
         # If file_type is generic or auto, try to deduce from extension
