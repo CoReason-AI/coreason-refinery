@@ -36,6 +36,7 @@ def test_ingest_endpoint_happy_path(client: TestClient, mock_pipeline: AsyncMock
 
     # Mock UUID to get deterministic URN
     from uuid import UUID
+
     job_uuid = "12345678-1234-5678-1234-567812345678"
 
     with patch("coreason_refinery.server.uuid.uuid4", return_value=UUID(job_uuid)):
@@ -87,6 +88,7 @@ def test_ingest_complex_artifact_mapping(client: TestClient, mock_pipeline: Asyn
     files = {"file": ("complex.xlsx", b"data", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
 
     from uuid import UUID
+
     job_uuid = "87654321-4321-8765-4321-876543210987"
 
     with patch("coreason_refinery.server.uuid.uuid4", return_value=UUID(job_uuid)):

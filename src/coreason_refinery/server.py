@@ -4,16 +4,13 @@ import tempfile
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from enum import Enum
-from typing import Any, Dict, List
+from typing import List
 
+from coreason_validator.schemas.knowledge import ArtifactType, KnowledgeArtifact
 from fastapi import FastAPI, File, Request, UploadFile
-from pydantic import BaseModel
 
 from coreason_refinery.models import IngestionConfig, IngestionJob, RefinedChunk
 from coreason_refinery.pipeline import RefineryPipelineAsync
-
-from coreason_validator.schemas.knowledge import ArtifactType, KnowledgeArtifact
 
 
 @asynccontextmanager

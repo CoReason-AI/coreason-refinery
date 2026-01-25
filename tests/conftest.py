@@ -1,14 +1,16 @@
 import sys
-from unittest.mock import MagicMock
 from enum import Enum
-from typing import Dict, Any
+from typing import Any, Dict
+from unittest.mock import MagicMock
+
 from pydantic import BaseModel
 
 # Mock coreason_validator.schemas.knowledge if it's missing in the environment
 # This allows tests to run even if the installed package is outdated or missing the module
 try:
-    import coreason_validator.schemas.knowledge
+    import coreason_validator.schemas.knowledge  # noqa: F401
 except ImportError:
+
     class ArtifactType(str, Enum):
         TEXT = "TEXT"
 
