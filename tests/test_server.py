@@ -1,19 +1,16 @@
-import pytest
 from unittest.mock import AsyncMock, patch
+
 from fastapi.testclient import TestClient
-from coreason_refinery.server import app
+
 from coreason_refinery.models import RefinedChunk
+from coreason_refinery.server import app
+
 
 def test_ingest_endpoint() -> None:
     # Mock the pipeline instance
     mock_pipeline = AsyncMock()
     mock_pipeline.process.return_value = [
-        RefinedChunk(
-            id="test-chunk-id",
-            text="Test content",
-            vector=[0.1, 0.2],
-            metadata={"page": 1}
-        )
+        RefinedChunk(id="test-chunk-id", text="Test content", vector=[0.1, 0.2], metadata={"page": 1})
     ]
 
     # Mock the context manager behavior of the pipeline
