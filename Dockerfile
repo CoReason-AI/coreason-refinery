@@ -22,6 +22,15 @@ RUN poetry export -f requirements.txt --output requirements.txt --without-hashes
 # Stage 2: Runtime
 FROM python:3.12-slim AS runtime
 
+# Install system dependencies
+# hadolint ignore=DL3008
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    libmagic-dev \
+    poppler-utils \
+    tesseract-ocr && \
+    rm -rf /var/lib/apt/lists/*
+
 # Create a non-root user
 RUN useradd --create-home --shell /bin/bash appuser
 USER appuser
@@ -39,3 +48,5 @@ COPY --from=builder /wheels /wheels
 # Install dependencies from requirements.txt and the application wheel
 RUN pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir /wheels/*.whl
+
+CMD ["uvicorn", "coreason_refinery.server:app", "--host", "0.0.0.0", "--port", "8000"]
