@@ -4,29 +4,13 @@ import tempfile
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from enum import Enum
-from typing import Any, Dict, List
+from typing import List
 
+from coreason_validator.schemas.knowledge import ArtifactType, KnowledgeArtifact
 from fastapi import FastAPI, File, Request, UploadFile
-from pydantic import BaseModel
 
 from coreason_refinery.models import IngestionConfig, IngestionJob, RefinedChunk
 from coreason_refinery.pipeline import RefineryPipelineAsync
-
-# Attempt to import KnowledgeArtifact from coreason_validator
-# If the package is missing the schema (e.g. version mismatch), we define it here to satisfy the contract.
-try:
-    from coreason_validator.schemas.knowledge import ArtifactType, KnowledgeArtifact
-except ImportError:
-
-    class ArtifactType(str, Enum):  # type: ignore[no-redef]
-        TEXT = "TEXT"
-
-    class KnowledgeArtifact(BaseModel):  # type: ignore[no-redef]
-        content: str
-        source_location: Dict[str, Any]
-        source_urn: str
-        artifact_type: ArtifactType = ArtifactType.TEXT
 
 
 @asynccontextmanager
@@ -66,7 +50,7 @@ async def ingest_file(request: Request, file: UploadFile = File(...)) -> List[Kn
             artifact = KnowledgeArtifact(
                 content=chunk.text,
                 source_location=chunk.metadata,
-                source_urn=f"urn:file:{file.filename}",
+                source_urn=f"urn:job:{job_id}:file:{file.filename}",
                 artifact_type=ArtifactType.TEXT,
             )
             artifacts.append(artifact)

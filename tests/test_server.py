@@ -33,7 +33,14 @@ def test_ingest_endpoint_happy_path(client: TestClient, mock_pipeline: AsyncMock
     ]
 
     files = {"file": ("test.txt", b"dummy content", "text/plain")}
-    response = client.post("/ingest", files=files)
+
+    # Mock UUID to get deterministic URN
+    from uuid import UUID
+
+    job_uuid = "12345678-1234-5678-1234-567812345678"
+
+    with patch("coreason_refinery.server.uuid.uuid4", return_value=UUID(job_uuid)):
+        response = client.post("/ingest", files=files)
 
     assert response.status_code == 200
     artifacts = response.json()
@@ -42,7 +49,7 @@ def test_ingest_endpoint_happy_path(client: TestClient, mock_pipeline: AsyncMock
     artifact = artifacts[0]
     assert artifact["content"] == "Test content"
     assert artifact["source_location"] == {"page": 1}
-    assert artifact["source_urn"] == "urn:file:test.txt"
+    assert artifact["source_urn"] == f"urn:job:{job_uuid}:file:test.txt"
     assert artifact["artifact_type"] == "TEXT"
 
     assert mock_pipeline.process.called
@@ -79,7 +86,13 @@ def test_ingest_complex_artifact_mapping(client: TestClient, mock_pipeline: Asyn
     ]
 
     files = {"file": ("complex.xlsx", b"data", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
-    response = client.post("/ingest", files=files)
+
+    from uuid import UUID
+
+    job_uuid = "87654321-4321-8765-4321-876543210987"
+
+    with patch("coreason_refinery.server.uuid.uuid4", return_value=UUID(job_uuid)):
+        response = client.post("/ingest", files=files)
 
     assert response.status_code == 200
     artifacts = response.json()
@@ -88,7 +101,7 @@ def test_ingest_complex_artifact_mapping(client: TestClient, mock_pipeline: Asyn
     # Check first artifact
     assert artifacts[0]["content"] == "Header"
     assert artifacts[0]["source_location"] == {"role": "title", "confidence": 0.99}
-    assert artifacts[0]["source_urn"] == "urn:file:complex.xlsx"
+    assert artifacts[0]["source_urn"] == f"urn:job:{job_uuid}:file:complex.xlsx"
 
     # Check second artifact
     assert artifacts[1]["content"] == "Cell A1"
